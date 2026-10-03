@@ -1,0 +1,94 @@
+name: krl-app
+
+x-backend: &backend
+  build: ./docker/backend
+  image: krl-app-backend:dev
+  entrypoint: ["backend-entrypoint"]
+  user: "${UID:-1000}:${GID:-1000}"
+  working_dir: /app
+  volumes:
+    - ./backend:/app
+  environment:
+    # Public URLs: custom domains behind a reverse proxy (see .env) or plain localhost ports.
+    APP_URL: ${API_URL:-http://localhost:${BACKEND_PORT:-8000}}
+    FRONTEND_URL: ${FRONTEND_URL:-http://localhost:${FRONTEND_PORT:-3000}}
+    SANCTUM_STATEFUL_DOMAINS: ${SANCTUM_STATEFUL_DOMAINS:-localhost:${FRONTEND_PORT:-3000},127.0.0.1:${FRONTEND_PORT:-3000}}
+    SESSION_DOMAIN: ${SESSION_DOMAIN:-localhost}
+    SESSION_SECURE_COOKIE: ${SESSION_SECURE_COOKIE:-false}
+    DB_CONNECTION: pgsql
+    DB_HOST: postgres
+    DB_PORT: 5432
+    DB_DATABASE: ${POSTGRES_DB:-krl}
+    DB_USERNAME: ${POSTGRES_USER:-krl}
+    DB_PASSWORD: ${POSTGRES_PASSWORD:-secret}
+  depends_on:
+    postgres:
+      condition: service_healthy
+  restart: unless-stopped
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-krl}
+      POSTGRES_USER: ${POSTGRES_USER:-krl}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-secret}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/postgres/init-test-db.sql:/docker-entrypoint-initdb.d/10-test-db.sql:ro
+    ports:
+      - "127.0.0.1:${DB_FORWARD_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-krl} -d ${POSTGRES_DB:-krl}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  backend:
+    <<: *backend
+    command: ["serve"]
+    ports:
+      - "127.0.0.1:${BACKEND_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "test -f storage/framework/.krl-ready && php -r 'exit(@file_get_contents(\"http://127.0.0.1:8000/up\") ? 0 : 1);'"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  # Runs "Sync KCI Data Now" jobs dispatched from the admin panel.
+  queue:
+    <<: *backend
+    command: ["queue"]
+
+  # Laravel Scheduler: daily kci:sync-schedules.
+  scheduler:
+    <<: *backend
+    command: ["scheduler"]
+
+  frontend:
+    image: node:24-alpine
+    user: "${UID:-1000}:${GID:-1000}"
+    working_dir: /app
+    command: ["sh", "-c", "[ -d node_modules/next ] || npm install; exec npm run dev -- --hostname 0.0.0.0 --port 3000"]
+    volumes:
+      - ./frontend:/app
+    environment:
+      HOME: /tmp
+      npm_config_cache: /tmp/.npm
+      NEXT_TELEMETRY_DISABLED: 1
+      # Browser -> Laravel
+      NEXT_PUBLIC_API_URL: ${API_URL:-http://localhost:${BACKEND_PORT:-8000}}
+      # Hostnames allowed to load dev resources (HMR) through the reverse proxy
+      ALLOWED_DEV_ORIGINS: ${APP_DOMAIN:-}
+      # Next.js server (inside Docker network) -> Laravel
+      API_INTERNAL_URL: http://backend:8000
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:-3000}:3000"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  pgdata:

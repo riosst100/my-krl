@@ -1,0 +1,78 @@
+<?php
+
+use App\Http\Controllers\Api\V1;
+use App\Http\Controllers\Api\V1\Admin;
+use Illuminate\Support\Facades\Route;
+
+Route::prefix('v1')->name('api.v1.')->group(function () {
+
+    // --- Authentication (website: cookie session via Sanctum) -------------
+    Route::prefix('auth')->name('auth.')->group(function () {
+        Route::middleware('throttle:auth')->group(function () {
+            Route::post('register', [V1\AuthController::class, 'register'])->name('register');
+            Route::post('login', [V1\AuthController::class, 'login'])->name('login');
+            // Mobile clients: bearer tokens instead of cookies.
+            Route::post('token', [V1\TokenController::class, 'store'])->name('token.store');
+        });
+
+        Route::middleware('auth:sanctum')->group(function () {
+            Route::post('logout', [V1\AuthController::class, 'logout'])->name('logout');
+            Route::get('me', [V1\AuthController::class, 'me'])->name('me');
+            Route::delete('token', [V1\TokenController::class, 'destroy'])->name('token.destroy');
+        });
+    });
+
+    // --- Signed-in user ----------------------------------------------------
+    Route::middleware('auth:sanctum')->prefix('me')->name('me.')->group(function () {
+        Route::get('favorite-stations', [V1\FavoriteStationController::class, 'index'])->name('favorite-stations.index');
+        Route::put('favorite-stations', [V1\FavoriteStationController::class, 'update'])->name('favorite-stations.update');
+    });
+
+    // --- Public data -------------------------------------------------------
+    Route::get('stations', [V1\StationController::class, 'index'])->name('stations.index');
+    Route::get('stations/{station}', [V1\StationController::class, 'show'])->name('stations.show');
+    Route::get('stations/{station}/schedules', [V1\ScheduleController::class, 'station'])->name('stations.schedules');
+    Route::get('stations/{station}/destinations', [V1\ScheduleController::class, 'destinations'])->name('stations.destinations');
+    Route::get('schedules', [V1\ScheduleController::class, 'index'])->name('schedules.index');
+    Route::get('schedules/dates', [V1\ScheduleController::class, 'dates'])->name('schedules.dates');
+    Route::get('schedules/next', [V1\ScheduleController::class, 'next'])->name('schedules.next');
+
+    // --- Admin (separate "admin" session guard) ----------------------------
+    Route::prefix('admin')->name('admin.')->group(function () {
+        Route::post('auth/login', [Admin\AuthController::class, 'login'])->middleware('throttle:auth')->name('auth.login');
+
+        Route::middleware(['auth:admin', 'admin'])->group(function () {
+            Route::post('auth/logout', [Admin\AuthController::class, 'logout'])->name('auth.logout');
+            Route::get('auth/me', [Admin\AuthController::class, 'me'])->name('auth.me');
+
+            Route::get('dashboard', Admin\DashboardController::class)->name('dashboard');
+
+            Route::get('users', [Admin\UserController::class, 'index'])->name('users.index');
+            Route::get('users/{user}', [Admin\UserController::class, 'show'])->name('users.show');
+            Route::patch('users/{user}/role', [Admin\UserController::class, 'updateRole'])->name('users.role');
+
+            Route::get('stations', [Admin\StationController::class, 'index'])->name('stations.index');
+            Route::post('stations/sync', [Admin\StationController::class, 'sync'])->middleware('throttle:admin-sync')->name('stations.sync');
+            Route::get('settings/stations-api', [Admin\StationsApiController::class, 'show'])->name('settings.stations-api.show');
+            Route::put('settings/stations-api', [Admin\StationsApiController::class, 'update'])->name('settings.stations-api.update');
+            Route::delete('settings/stations-api', [Admin\StationsApiController::class, 'reset'])->name('settings.stations-api.reset');
+            Route::get('settings/schedules-api', [Admin\SchedulesApiController::class, 'show'])->name('settings.schedules-api.show');
+            Route::put('settings/schedules-api', [Admin\SchedulesApiController::class, 'update'])->name('settings.schedules-api.update');
+            Route::delete('settings/schedules-api', [Admin\SchedulesApiController::class, 'reset'])->name('settings.schedules-api.reset');
+            Route::post('settings/schedules-api/test', [Admin\SchedulesApiController::class, 'test'])->middleware('throttle:admin-sync')->name('settings.schedules-api.test');
+            Route::get('settings/train-stops-api', [Admin\TrainStopsApiController::class, 'show'])->name('settings.train-stops-api.show');
+            Route::put('settings/train-stops-api', [Admin\TrainStopsApiController::class, 'update'])->name('settings.train-stops-api.update');
+            Route::delete('settings/train-stops-api', [Admin\TrainStopsApiController::class, 'reset'])->name('settings.train-stops-api.reset');
+            Route::post('settings/train-stops-api/test', [Admin\TrainStopsApiController::class, 'test'])->middleware('throttle:admin-sync')->name('settings.train-stops-api.test');
+            Route::post('settings/stations-api/test', [Admin\StationsApiController::class, 'test'])->middleware('throttle:admin-sync')->name('settings.stations-api.test');
+            Route::get('stations/{station:id}', [Admin\StationController::class, 'show'])->whereNumber('station')->name('stations.show');
+            Route::patch('stations/{station:id}', [Admin\StationController::class, 'update'])->whereNumber('station')->name('stations.update');
+
+            Route::get('schedules', [Admin\ScheduleController::class, 'index'])->name('schedules.index');
+
+            Route::get('sync-logs', [Admin\SyncController::class, 'index'])->name('sync.index');
+            Route::get('sync-logs/{syncLog}', [Admin\SyncController::class, 'show'])->name('sync.show');
+            Route::post('sync', [Admin\SyncController::class, 'store'])->middleware('throttle:admin-sync')->name('sync.store');
+        });
+    });
+});
