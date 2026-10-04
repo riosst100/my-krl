@@ -44,6 +44,32 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* Slim, rounded scrollbars (Firefox/Chrome standard properties + WebKit fallback). */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border: 3px solid transparent;
+  border-radius: 9999px;
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-button {
+  display: none;
+}
+
 /* Horizontal chip rows on small screens: scrollable without a visible scrollbar. */
 .no-scrollbar {
   scrollbar-width: none;

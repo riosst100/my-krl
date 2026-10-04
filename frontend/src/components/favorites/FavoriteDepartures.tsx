@@ -5,7 +5,6 @@ import { useState } from "react";
 import { FavoriteRoutesDialog } from "@/components/favorites/FavoriteRoutesDialog";
 import { DepartureRow } from "@/components/favorites/DepartureRow";
 import { TripDetailDialog } from "@/components/favorites/TripDetailDialog";
-import { UpcomingDepartures } from "@/components/favorites/UpcomingDepartures";
 import { Button, Card, ErrorState, Skeleton } from "@/components/ui";
 import { useToast } from "@/components/ui/Toast";
 import { errorMessage } from "@/lib/api/client";
@@ -32,13 +31,7 @@ const DEPARTURES_PER_ROUTE = 2;
  * Homepage block: the next trains of the visitor's favourite routes (1 to 4).
  * Right after signing in, a mandatory dialog asks for the first route.
  */
-export function FavoriteDepartures({
-  stations,
-  guestStation,
-}: {
-  stations: Station[];
-  guestStation?: string;
-}) {
+export function FavoriteDepartures({ stations }: { stations: Station[] }) {
   const {
     routes,
     status,
@@ -64,11 +57,8 @@ export function FavoriteDepartures({
     toast("Rute favorit disimpan.", "success");
   };
 
-  // Favourites are an account feature: guests see the soonest departures instead.
-  if (status === "guest")
-    return (
-      <UpcomingDepartures stations={stations} initialStation={guestStation} />
-    );
+  // Favourites are an account feature: guests get an invitation instead.
+  if (status === "guest") return <GuestPrompt />;
 
   return (
     <section aria-labelledby="favorites-title" className="mb-8 sm:mb-10">
@@ -223,5 +213,40 @@ function RouteCard({
         onClose={() => setSelected(null)}
       />
     </Card>
+  );
+}
+
+function GuestPrompt() {
+  return (
+    <section aria-labelledby="favorites-title" className="mb-8 sm:mb-10">
+      <Card className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+        <div className="min-w-0">
+          <h2
+            id="favorites-title"
+            className="text-base font-bold tracking-tight text-ink sm:text-lg"
+          >
+            Masuk untuk menambahkan rute favorit Anda
+          </h2>
+          <p className="mt-1 text-[13px] leading-relaxed text-muted sm:text-sm">
+            Simpan rute yang sering Anda pakai, sampai 4 rute. Kereta berikutnya
+            langsung tampil di beranda, tanpa perlu mencari lagi.
+          </p>
+        </div>
+        <div className="flex shrink-0 gap-2">
+          <Link
+            href="/login"
+            className="flex-1 rounded-xl bg-brand-600 px-4 py-2.5 text-center text-sm font-semibold text-white shadow-sm shadow-brand-600/20 transition-colors hover:bg-brand-700 sm:flex-none"
+          >
+            Masuk
+          </Link>
+          <Link
+            href="/register"
+            className="flex-1 rounded-xl border border-line bg-white px-4 py-2.5 text-center text-sm font-semibold text-ink shadow-sm transition-colors hover:bg-slate-50 sm:flex-none"
+          >
+            Daftar
+          </Link>
+        </div>
+      </Card>
+    </section>
   );
 }

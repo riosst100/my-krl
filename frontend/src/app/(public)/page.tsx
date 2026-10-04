@@ -8,11 +8,7 @@ import type { Station } from "@/lib/api/types";
 // Busy interchange stations shown as shortcuts.
 const POPULAR = ["MRI", "THB", "SUD", "BKS", "DP", "BOO", "JAKK", "SRP"];
 
-export default async function HomePage(props: PageProps<"/">) {
-  // Guests can narrow "Kereta terdekat" to one departure station: /?dari=THB
-  const { dari } = await props.searchParams;
-  const guestStation = typeof dari === "string" && /^[A-Za-z0-9]{1,10}$/.test(dari) ? dari.toUpperCase() : undefined;
-
+export default async function HomePage() {
   let stations: Station[] = [];
   let failed = false;
   try {
@@ -25,7 +21,7 @@ export default async function HomePage(props: PageProps<"/">) {
 
   return (
     <>
-      {!failed && stations.length > 0 && <FavoriteDepartures stations={stations} guestStation={guestStation} />}
+      {!failed && stations.length > 0 && <FavoriteDepartures stations={stations} />}
 
       <div className="grid gap-6 lg:grid-cols-[1fr_400px] lg:items-start lg:gap-8">
       <section className="min-w-0 lg:pt-6">

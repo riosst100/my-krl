@@ -37,54 +37,12 @@ try {
   }
 
   await page.goto(`${BASE}/`);
-  const upcoming = page.locator("section", { has: page.getByRole("heading", { name: /^Kereta terdekat/ }) });
-  // After the last train of the day the list is empty and says so.
-  const noMoreTrains = upcoming.getByText(/^Tidak ada lagi kereta hari ini/);
-  const upcomingReady = () => upcoming.locator("ol li").first().or(noMoreTrains).waitFor();
-  await upcomingReady();
-  const firstUpcoming = (await noMoreTrains.count())
-    ? "no more trains today"
-    : (await upcoming.locator("ol li").first().innerText()).replace(/\s+/g, " ").trim();
-  await upcoming.getByRole("link", { name: "Daftar" }).waitFor();
+  const invite = page.locator("section", { has: page.getByRole("heading", { name: "Masuk untuk menambahkan rute favorit Anda" }) });
+  await invite.getByRole("link", { name: "Masuk" }).waitFor();
+  await invite.getByRole("link", { name: "Daftar" }).waitFor();
   if (await page.getByRole("dialog").isVisible()) throw new Error("guests must not get a favourites dialog");
   await page.screenshot({ path: `${SHOTS}/home-guest.png` });
-  step(`guest homepage shows the soonest departures ("${firstUpcoming}") and a sign-up invitation`);
-
-  // Departure station picker is the first thing in the section, and is searchable.
-  const fromBox = page.getByRole("combobox", { name: "Stasiun keberangkatan" });
-  const boxTop = (await fromBox.boundingBox()).y;
-  const titleTop = (await page.getByRole("heading", { name: /^Kereta terdekat/ }).boundingBox()).y;
-  if (boxTop > titleTop) throw new Error("departure station picker should be above the 'Kereta terdekat' title");
-
-  // Search by typing part of the code, pick with the mouse.
-  await fromBox.click();
-  await fromBox.fill(STATION.toLowerCase());
-  const listbox = page.getByRole("listbox", { name: "Stasiun keberangkatan" });
-  const optionCount = await listbox.getByRole("option").count();
-  await listbox.getByRole("option").filter({ hasText: STATION }).first().click();
-  await page.waitForURL(new RegExp(`\\?dari=${STATION}$`));
-  await page.getByRole("heading", { name: /^Kereta terdekat dari / }).waitFor();
-  await upcomingReady();
-  const fromRows = await upcoming.locator("ol li").count();
-  await page.reload();
-  if (!(await fromBox.inputValue()).includes(`(${STATION})`)) throw new Error("departure station not kept after reload");
-
-  // Search by name with the keyboard: type, Enter picks the best match.
-  await fromBox.click();
-  await fromBox.fill("sudir");
-  await page.keyboard.press("Enter");
-  await page.waitForURL(new RegExp(`\\?dari=${FAVORITE_2}$`));
-  await upcoming.getByText(/^Belum ada jadwal dari /).or(upcoming.locator("ol li").first()).or(noMoreTrains).waitFor();
-  const secondState = (await upcoming.getByText(/^Belum ada jadwal dari /).count()) > 0 ? "no schedules yet" : "has schedules";
-
-  // Unknown text: no options; clear button returns to all stations.
-  await fromBox.click();
-  await fromBox.fill("zzzz");
-  await listbox.getByText("Stasiun tidak ditemukan").waitFor();
-  await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "Hapus pilihan stasiun" }).click();
-  await page.waitForURL(`${BASE}/`);
-  step(`guest searches departure station: "${STATION.toLowerCase()}" → ${optionCount} option(s), ${fromRows} trains (kept after reload); "sudir"+Enter → ${FAVORITE_2} (${secondState}); cleared`);
+  step("guest homepage shows the invitation to sign in and add favourite routes");
 
   await page.goto(`${BASE}/register`);
   await formReady(page, "Buat akun");

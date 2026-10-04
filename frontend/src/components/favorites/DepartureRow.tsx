@@ -3,8 +3,8 @@ import type { Schedule } from "@/lib/api/types";
 import { lineLabel } from "@/lib/format";
 
 /**
- * One train of a route (departure station -> chosen destination station): the
- * departure and the arrival as two separate boxes, the final destination and a
+ * One train: the departure and the arrival as two separate boxes (arrival at
+ * the chosen destination station, or at the train's final destination), and a
  * button for the trip detail.
  */
 export function DepartureRow({
@@ -17,13 +17,18 @@ export function DepartureRow({
 }: {
   schedule: Schedule;
   fromName: string;
-  toName: string;
+  /** Chosen destination station; without it the train's final destination is used. */
+  toName?: string;
   first: boolean;
   /** Shown as a badge when given (e.g. "5 menit lagi"). */
   countdown?: string;
   onOpen: () => void;
 }) {
-  const arrival = s.to_station_arrival_time;
+  // With a chosen destination: arrival there. Otherwise: arrival at the final destination.
+  const arrival = toName
+    ? s.to_station_arrival_time
+    : s.destination_arrival_time;
+  const arrivalStation = toName ?? s.destination;
 
   return (
     <li
@@ -59,20 +64,27 @@ export function DepartureRow({
           station={fromName}
         />
         {arrival && (
-          <TimeBox label="Tiba" tone="arrive" time={arrival} station={toName} />
+          <TimeBox
+            label="Tiba"
+            tone="arrive"
+            time={arrival}
+            station={arrivalStation}
+          />
         )}
       </div>
 
       <div className="mt-2.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-t border-slate-200/80 pt-2.5">
-        <p className="min-w-0 text-[11px] leading-snug text-slate-600 sm:text-xs">
-          Tujuan akhir{" "}
-          <span className="font-semibold text-ink">{s.destination}</span>
-        </p>
+        {toName && (
+          <p className="min-w-0 text-[11px] leading-snug text-slate-600 sm:text-xs">
+            Tujuan akhir{" "}
+            <span className="font-semibold text-ink">{s.destination}</span>
+          </p>
+        )}
         <button
           type="button"
           onClick={onOpen}
           aria-label={`Lihat perjalanan KA ${s.train_number}`}
-          className="shrink-0 rounded-full border border-brand-600/40 bg-white px-3 py-1 text-xs font-semibold text-brand-600 transition-colors hover:bg-brand-50"
+          className="ml-auto shrink-0 rounded-full border border-brand-600/40 bg-white px-3 py-1 text-xs font-semibold text-brand-600 transition-colors hover:bg-brand-50"
         >
           Lihat perjalanan →
         </button>

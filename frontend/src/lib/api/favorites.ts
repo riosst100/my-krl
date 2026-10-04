@@ -40,21 +40,3 @@ export async function getFavoriteRouteDepartures(limit = 2, signal?: AbortSignal
     signal,
   });
 }
-
-/** The soonest departures from now, across all stations or from one station (homepage for guests). */
-export function getUpcomingDepartures(limit = 5, station?: string, signal?: AbortSignal) {
-  return apiFetch<{
-    data: Schedule[];
-    meta: {
-      now: string;
-      station: Pick<Station, "code" | "name" | "slug"> | null;
-      /** Today's timetable exists (an empty list then means: no more trains today). */
-      has_schedules_today: boolean;
-      last_synced_at: string | null;
-    };
-  }>("/schedules/upcoming", {
-    query: { limit, station },
-    signal,
-  });
-}
-

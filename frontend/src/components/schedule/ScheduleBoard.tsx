@@ -3,14 +3,7 @@
 import { useMemo, useState } from "react";
 import { DepartureRow } from "@/components/favorites/DepartureRow";
 import { TripDetailDialog } from "@/components/favorites/TripDetailDialog";
-import {
-  Card,
-  cx,
-  EmptyState,
-  ErrorState,
-  LineDot,
-  Skeleton,
-} from "@/components/ui";
+import { Card, cx, EmptyState, ErrorState, Skeleton } from "@/components/ui";
 import { errorMessage } from "@/lib/api/client";
 import { getStationSchedules } from "@/lib/api/schedules";
 import type { Schedule } from "@/lib/api/types";
@@ -18,8 +11,6 @@ import {
   formatCountdown,
   formatDateLong,
   formatDateTime,
-  lineLabel,
-  minutesBetween,
   secondsUntil,
 } from "@/lib/format";
 import { useApi } from "@/lib/hooks/useApi";
@@ -70,13 +61,6 @@ export function ScheduleBoard({ stationCode, to }: Props) {
       ? rows.find((s) => s.departure_time >= clock.now)
       : undefined;
   const nextId = next?.id;
-  const nextCountdown =
-    next && live
-      ? formatCountdown(
-          secondsUntil(next.service_date, next.departure_time, live),
-        )
-      : "";
-
   if (loading && !data) return <BoardSkeleton />;
 
   if (error) {
@@ -174,147 +158,32 @@ export function ScheduleBoard({ stationCode, to }: Props) {
         />
       ) : (
         <>
-          {trip ? (
-            // With a destination station: the same train cards as the homepage's favourite routes.
-            <>
-              <ul className="p-2 sm:p-3">
-                {rows.map((s) => (
-                  <DepartureRow
-                    key={s.id}
-                    schedule={s}
-                    fromName={meta.station.name}
-                    toName={trip.name}
-                    first={s.id === nextId}
-                    countdown={
-                      isToday && live
-                        ? formatCountdown(
-                            secondsUntil(
-                              s.service_date,
-                              s.departure_time,
-                              live,
-                            ),
-                          )
-                        : undefined
-                    }
-                    onOpen={() => setSelected(s)}
-                  />
-                ))}
-              </ul>
-              <TripDetailDialog
-                schedule={selected}
-                from={meta.station}
-                to={trip}
-                onClose={() => setSelected(null)}
+          {/* The same train cards as the homepage's favourite routes. */}
+          <ul className="p-2 sm:p-3">
+            {rows.map((s) => (
+              <DepartureRow
+                key={s.id}
+                schedule={s}
+                fromName={meta.station.name}
+                toName={trip?.name}
+                first={s.id === nextId}
+                countdown={
+                  isToday && live
+                    ? formatCountdown(
+                        secondsUntil(s.service_date, s.departure_time, live),
+                      )
+                    : undefined
+                }
+                onOpen={() => setSelected(s)}
               />
-            </>
-          ) : (
-            <>
-              {/* Desktop table */}
-              <table className="hidden w-full text-left text-sm md:table">
-                <caption className="sr-only">
-                  Jadwal keberangkatan kereta dari stasiun {meta.station.name}
-                </caption>
-                <thead className="bg-slate-50/80 text-[11px] font-semibold uppercase tracking-wider text-muted">
-                  <tr>
-                    <th scope="col" className="px-6 py-3">
-                      Berangkat
-                    </th>
-                    <th scope="col" className="px-4 py-3">
-                      Kereta
-                    </th>
-                    <th scope="col" className="px-4 py-3">
-                      Tujuan
-                    </th>
-                    <th scope="col" className="px-4 py-3">
-                      Tiba di tujuan
-                    </th>
-                    <th scope="col" className="px-6 py-3">
-                      Line
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-line">
-                  {rows.map((s) => (
-                    <tr
-                      key={s.id}
-                      className={cx(s.id === nextId && "bg-brand-50/60")}
-                    >
-                      <td className="px-6 py-3">
-                        <span className="tabular text-base font-bold text-ink">
-                          {s.departure_time}
-                        </span>
-                        {s.id === nextId && (
-                          <NextBadge countdown={nextCountdown} />
-                        )}
-                      </td>
-                      <td className="tabular px-4 py-3 font-semibold">
-                        KA {s.train_number}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="font-medium">{s.destination}</span>
-                        {s.route_name && (
-                          <span className="block text-xs text-muted">
-                            Rute {s.route_name}
-                          </span>
-                        )}
-                      </td>
-                      <td className="tabular px-4 py-3 text-slate-600">
-                        <ArrivalText schedule={s} />
-                      </td>
-                      <td className="px-6 py-3">
-                        <span className="inline-flex items-center gap-2 text-slate-600">
-                          <LineDot color={s.color ?? s.line?.color} />
-                          {lineLabel(s.line?.name)}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-
-              {/* Mobile list */}
-              <ul className="divide-y divide-line md:hidden">
-                {rows.map((s) => (
-                  <li
-                    key={s.id}
-                    className={cx(
-                      "flex items-start gap-3 border-l-[3px] py-3 pr-4 pl-[13px]",
-                      s.id === nextId
-                        ? "border-brand-600 bg-brand-50/60"
-                        : "border-transparent",
-                    )}
-                  >
-                    <div className="w-[5.25rem] shrink-0">
-                      <p className="tabular text-[17px] font-bold leading-6 text-ink">
-                        {s.departure_time}
-                      </p>
-                      {s.id === nextId && (
-                        <NextBadge countdown={nextCountdown} />
-                      )}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold leading-6 text-ink">
-                        → {s.destination}
-                      </p>
-                      <p className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-muted">
-                        <LineDot color={s.color ?? s.line?.color} />
-                        <span className="tabular shrink-0">
-                          KA {s.train_number}
-                        </span>
-                        <span aria-hidden="true">·</span>
-                        <span className="truncate">
-                          {lineLabel(s.line?.name).replace(/^Line /, "")}
-                        </span>
-                      </p>
-                    </div>
-                    <div className="tabular shrink-0 text-right">
-                      <ArrivalText schedule={s} compact />
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
+            ))}
+          </ul>
+          <TripDetailDialog
+            schedule={selected}
+            from={meta.station}
+            to={trip}
+            onClose={() => setSelected(null)}
+          />
 
           <p className="border-t border-line px-4 py-3 text-xs text-muted sm:px-6">
             {trip
@@ -325,59 +194,6 @@ export function ScheduleBoard({ stationCode, to }: Props) {
         </>
       )}
     </Card>
-  );
-}
-
-function ArrivalText({
-  schedule,
-  compact,
-}: {
-  schedule: Schedule;
-  compact?: boolean;
-}) {
-  if (!schedule.destination_arrival_time)
-    return <span className="text-muted">—</span>;
-  const duration = minutesBetween(
-    schedule.departure_time,
-    schedule.destination_arrival_time,
-  );
-  if (compact) {
-    return (
-      <>
-        <p className="leading-6">
-          <span className="text-[11px] font-medium text-muted">tiba </span>
-          <span className="text-sm font-semibold text-ink">
-            {schedule.destination_arrival_time}
-          </span>
-        </p>
-        {duration > 0 && (
-          <p className="text-[11px] text-muted">{duration} mnt</p>
-        )}
-      </>
-    );
-  }
-  return (
-    <span>
-      {schedule.destination_arrival_time}
-      {duration > 0 && (
-        <span className="text-slate-400"> · {duration} mnt</span>
-      )}
-    </span>
-  );
-}
-
-function NextBadge({ countdown }: { countdown: string }) {
-  return (
-    <>
-      <span className="mt-0.5 block w-fit rounded bg-brand-600 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white md:mt-0 md:ml-2 md:inline md:text-[10px]">
-        Berikutnya
-      </span>
-      {countdown && (
-        <span className="mt-0.5 block text-[11px] font-semibold text-brand-700 md:mt-0 md:ml-2 md:inline md:text-xs">
-          {countdown}
-        </span>
-      )}
-    </>
   );
 }
 

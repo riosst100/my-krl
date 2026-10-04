@@ -334,7 +334,7 @@ All responses are JSON: `{"data": ..., "meta": {...}}`. Errors: `{"message": "..
 
 ### Favourite stations (signed-in user)
 
-Favourites are an account feature: **favourite routes (departure → destination station, 1 to 4)** are chosen in a dialog on the homepage right after signing in (mandatory until the first route exists) and stored on the account. The homepage ("Rute Favorit") then shows the next 2 trains of each route that stop at the destination; routes can be changed later ("Ubah Rute Favorit"). Guests see the **soonest departures from now** across all stations (`GET /schedules/upcoming`) plus an invitation to sign up.
+Favourites are an account feature: **favourite routes (departure → destination station, 1 to 4)** are chosen in a dialog on the homepage right after signing in (mandatory until the first route exists) and stored on the account. The homepage ("Rute Favorit") then shows the next 2 trains of each route that stop at the destination; routes can be changed later ("Ubah Rute Favorit"). Guests see an invitation to sign in and add their favourite routes (the homepage no longer lists "Kereta terdekat"; `GET /schedules/upcoming` is still available as an API).
 
 | Method | Path | Notes |
 | --- | --- | --- |

@@ -110,7 +110,7 @@ export function FavoriteRoutesDialog({
       ref={ref}
       aria-labelledby="favorite-dialog-title"
       aria-describedby="favorite-dialog-desc"
-      className="m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-lg overflow-y-auto rounded-2xl border border-line bg-white p-0 text-ink shadow-xl backdrop:bg-ink/60 backdrop:backdrop-blur-sm"
+      className="m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-lg overflow-y-auto overscroll-contain rounded-2xl border border-line bg-white p-0 text-ink shadow-xl backdrop:bg-ink/60 backdrop:backdrop-blur-sm"
       onCancel={(e) => {
         // Esc closes only when the choice is not mandatory.
         e.preventDefault();
