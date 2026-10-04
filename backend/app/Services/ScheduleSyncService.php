@@ -59,6 +59,20 @@ class ScheduleSyncService
     }
 
     /**
+     * Station codes whose timetable is synced: the admin setting if saved,
+     * otherwise KCI_SYNC_STATIONS (empty = every active station).
+     *
+     * @return list<string>
+     */
+    public static function syncStationCodes(): array
+    {
+        $saved = Setting::value(Setting::SYNC_STATIONS);
+        $codes = $saved !== null ? explode(',', $saved) : config('kci.sync_stations');
+
+        return array_values(array_unique(array_filter(array_map(fn ($c) => strtoupper(trim((string) $c)), $codes))));
+    }
+
+    /**
      * The URL for one station: replaces a {station} placeholder, or the value
      * of the "stationid" query parameter, with the station code.
      *
@@ -171,7 +185,7 @@ class ScheduleSyncService
         $dates = collect(range(0, $days - 1))->map(fn (int $i) => $from->addDays($i));
         $only = array_values(array_filter(array_map(
             fn ($code) => strtoupper(trim((string) $code)),
-            $stationCodes ?? config('kci.sync_stations'),
+            $stationCodes ?? self::syncStationCodes(),
         )));
 
         $startedAt = now();

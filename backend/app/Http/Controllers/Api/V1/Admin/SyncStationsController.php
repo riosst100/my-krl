@@ -1,0 +1,73 @@
+<?php
+
+namespace App\Http\Controllers\Api\V1\Admin;
+
+use App\Http\Controllers\Controller;
+use App\Models\Setting;
+use App\Models\Station;
+use App\Services\ScheduleSyncService;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
+
+/**
+ * Admin setting: which stations the schedule sync fetches timetables for.
+ */
+class SyncStationsController extends Controller
+{
+    public function show(): JsonResponse
+    {
+        return $this->respond();
+    }
+
+    /**
+     * PUT { "stations": ["THB", "KRI"] } — at least one active station.
+     */
+    public function update(Request $request): JsonResponse
+    {
+        $request->merge([
+            'stations' => array_values(array_unique(array_map(
+                fn ($code) => is_string($code) ? strtoupper(trim($code)) : $code,
+                (array) $request->input('stations', []),
+            ))),
+        ]);
+
+        $validated = $request->validate([
+            'stations' => ['required', 'array', 'min:1', 'max:300'],
+            'stations.*' => ['required', 'string', Rule::exists('stations', 'code')->where('is_active', true)],
+        ], [
+            'stations.required' => 'Pilih minimal 1 stasiun.',
+            'stations.min' => 'Pilih minimal 1 stasiun.',
+            'stations.*.exists' => 'Stasiun tidak ditemukan atau tidak aktif.',
+        ]);
+
+        Setting::put(Setting::SYNC_STATIONS, implode(',', $validated['stations']), $request->user()->id);
+
+        return $this->respond();
+    }
+
+    public function reset(): JsonResponse
+    {
+        Setting::whereKey(Setting::SYNC_STATIONS)->delete();
+
+        return $this->respond();
+    }
+
+    private function respond(): JsonResponse
+    {
+        $setting = Setting::with('updatedBy:id,name')->find(Setting::SYNC_STATIONS);
+        $codes = ScheduleSyncService::syncStationCodes();
+
+        return response()->json([
+            'data' => [
+                // Empty = every active station.
+                'stations' => $codes,
+                'default_stations' => array_values(config('kci.sync_stations')),
+                'is_default' => $setting === null,
+                'active_stations' => Station::active()->count(),
+                'updated_at' => $setting?->updated_at?->toIso8601String(),
+                'updated_by' => $setting?->updatedBy?->name,
+            ],
+        ]);
+    }
+}

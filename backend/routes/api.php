@@ -37,6 +37,7 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
     Route::get('schedules', [V1\ScheduleController::class, 'index'])->name('schedules.index');
     Route::get('schedules/dates', [V1\ScheduleController::class, 'dates'])->name('schedules.dates');
     Route::get('schedules/next', [V1\ScheduleController::class, 'next'])->name('schedules.next');
+    Route::get('schedules/trains/{trainNumber}/stops', [V1\ScheduleController::class, 'trainStops'])->where('trainNumber', '[A-Za-z0-9]+')->name('schedules.train-stops');
     Route::get('schedules/upcoming', [V1\ScheduleController::class, 'upcoming'])->name('schedules.upcoming');
 
     // --- Admin (separate "admin" session guard) ----------------------------
@@ -58,6 +59,9 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
             Route::get('settings/stations-api', [Admin\StationsApiController::class, 'show'])->name('settings.stations-api.show');
             Route::put('settings/stations-api', [Admin\StationsApiController::class, 'update'])->name('settings.stations-api.update');
             Route::delete('settings/stations-api', [Admin\StationsApiController::class, 'reset'])->name('settings.stations-api.reset');
+            Route::get('settings/sync-stations', [Admin\SyncStationsController::class, 'show'])->name('settings.sync-stations.show');
+            Route::put('settings/sync-stations', [Admin\SyncStationsController::class, 'update'])->name('settings.sync-stations.update');
+            Route::delete('settings/sync-stations', [Admin\SyncStationsController::class, 'reset'])->name('settings.sync-stations.reset');
             Route::get('settings/schedules-api', [Admin\SchedulesApiController::class, 'show'])->name('settings.schedules-api.show');
             Route::put('settings/schedules-api', [Admin\SchedulesApiController::class, 'update'])->name('settings.schedules-api.update');
             Route::delete('settings/schedules-api', [Admin\SchedulesApiController::class, 'reset'])->name('settings.schedules-api.reset');

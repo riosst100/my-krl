@@ -162,7 +162,7 @@ try {
   step(`homepage shows favourite route (${favCards.join(" + ")}), ${nextTrains} upcoming departures`);
 
   // Change the routes later via the (optional) dialog.
-  await favSection.getByRole("button", { name: "Ubah rute" }).click();
+  await favSection.getByRole("button", { name: "Ubah Rute Favorit" }).click();
   const dialog = page.getByRole("dialog", { name: "Rute favorit" });
   await dialog.waitFor();
   await page.keyboard.press("Escape");

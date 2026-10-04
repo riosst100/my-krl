@@ -3,7 +3,19 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { StationSyncPanel } from "@/components/admin/StationSyncPanel";
-import { Badge, Button, Card, EmptyState, ErrorState, PageHeader, Pagination, SelectField, TableSkeleton, TextField } from "@/components/ui";
+import {
+  Badge,
+  Button,
+  Card,
+  EmptyState,
+  ErrorState,
+  PageHeader,
+  Pagination,
+  SelectField,
+  TableSkeleton,
+  TextField,
+} from "@/components/ui";
+import { DataTable } from "@/components/ui/DataTable";
 import { useToast } from "@/components/ui/Toast";
 import { getAdminStations, setStationActive } from "@/lib/api/admin";
 import { errorMessage } from "@/lib/api/client";
@@ -21,7 +33,10 @@ export default function AdminStationsPage() {
   const [busy, setBusy] = useState<number | null>(null);
   const q = useDebounced(search);
 
-  const { data, error, loading, reload } = useApi(`stations|${q}|${status}|${page}`, () => getAdminStations({ search: q, status, page }));
+  const { data, error, loading, reload } = useApi(
+    `stations|${q}|${status}|${page}`,
+    () => getAdminStations({ search: q, status, page }),
+  );
 
   const meta = data?.meta;
   const inProgress = meta?.station_sync_in_progress ?? false;
@@ -38,7 +53,10 @@ export default function AdminStationsPage() {
     try {
       const updated = await setStationActive(station.id, !active);
       setOverrides((o) => ({ ...o, [station.id]: updated.is_active }));
-      toast(`Stasiun ${updated.name} ${updated.is_active ? "diaktifkan" : "dinonaktifkan"}.`, "success");
+      toast(
+        `Stasiun ${updated.name} ${updated.is_active ? "diaktifkan" : "dinonaktifkan"}.`,
+        "success",
+      );
     } catch (err) {
       toast(errorMessage(err), "error");
     } finally {
@@ -48,7 +66,10 @@ export default function AdminStationsPage() {
 
   return (
     <>
-      <PageHeader title="Stasiun" description="Data master stasiun. Stasiun nonaktif tidak tampil di situs publik dan tidak disinkronkan jadwalnya." />
+      <PageHeader
+        title="Stasiun"
+        description="Data master stasiun. Stasiun nonaktif tidak tampil di situs publik dan tidak disinkronkan jadwalnya."
+      />
 
       <StationSyncPanel meta={meta} onChanged={reload} />
 
@@ -86,59 +107,106 @@ export default function AdminStationsPage() {
           <EmptyState title="Tidak ada stasiun" />
         ) : (
           <>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-muted">
-                  <tr>
-                    <th scope="col" className="px-4 py-3">Kode</th>
-                    <th scope="col" className="px-4 py-3">Nama</th>
-                    <th scope="col" className="px-4 py-3">Wilayah</th>
-                    <th scope="col" className="px-4 py-3">Jadwal hari ini</th>
-                    <th scope="col" className="px-4 py-3">Status KCI</th>
-                    <th scope="col" className="px-4 py-3">Tampil di situs</th>
-                    <th scope="col" className="px-4 py-3"><span className="sr-only">Aksi</span></th>
-                  </tr>
-                </thead>
-                <tbody className={`divide-y divide-line ${loading ? "opacity-60" : ""}`}>
-                  {data.data.map((s) => {
+            <DataTable
+              busy={loading}
+              rows={data.data}
+              rowKey={(s) => s.id}
+              caption="Daftar stasiun"
+              columns={[
+                {
+                  key: "name",
+                  header: "Nama",
+                  mobile: "title",
+                  className: "font-medium",
+                  cell: (s) => (
+                    <Link
+                      href={`/admin/stations/${s.id}`}
+                      className="text-ink hover:text-brand-700 hover:underline"
+                    >
+                      {s.name}{" "}
+                      <span className="text-xs font-bold text-muted">
+                        {s.code}
+                      </span>
+                    </Link>
+                  ),
+                },
+                {
+                  key: "code",
+                  header: "Kode",
+                  mobile: "hide",
+                  className: "font-bold text-ink",
+                  cell: (s) => s.code,
+                },
+                {
+                  key: "area",
+                  header: "Wilayah",
+                  className: "text-slate-600",
+                  cell: (s) =>
+                    s.operational_area_name ?? s.operational_area ?? "—",
+                },
+                {
+                  key: "today",
+                  header: "Jadwal hari ini",
+                  className: "tabular text-slate-600",
+                  cell: (s) => formatNumber(s.schedules_count ?? 0),
+                },
+                {
+                  key: "kci",
+                  header: "Status KCI",
+                  cell: (s) => (
+                    <Badge tone={s.kci_enabled ? "neutral" : "warning"}>
+                      {s.kci_enabled ? "Beroperasi" : "Tidak beroperasi"}
+                    </Badge>
+                  ),
+                },
+                {
+                  key: "shown",
+                  header: "Tampil di situs",
+                  cell: (s) => {
                     const active = overrides[s.id] ?? s.is_active;
                     return (
-                      <tr key={s.id}>
-                        <td className="px-4 py-3 font-bold text-ink">{s.code}</td>
-                        <td className="px-4 py-3 font-medium">
-                          <Link href={`/admin/stations/${s.id}`} className="text-ink hover:text-brand-700 hover:underline">
-                            {s.name}
-                          </Link>
-                        </td>
-                        <td className="px-4 py-3 text-slate-600">{s.operational_area_name ?? (s.operational_area ?? "—")}</td>
-                        <td className="tabular px-4 py-3 text-slate-600">{formatNumber(s.schedules_count ?? 0)}</td>
-                        <td className="px-4 py-3">
-                          <Badge tone={s.kci_enabled ? "neutral" : "warning"}>{s.kci_enabled ? "Beroperasi" : "Tidak beroperasi"}</Badge>
-                        </td>
-                        <td className="px-4 py-3">
-                          <Badge tone={active ? "success" : "neutral"}>{active ? "Aktif" : "Nonaktif"}</Badge>
-                        </td>
-                        <td className="whitespace-nowrap px-4 py-3 text-right">
-                          <Link href={`/admin/stations/${s.id}`} className="mr-3 text-sm font-semibold text-brand-600 hover:underline">
-                            Detail
-                          </Link>
-                          <Button
-                            size="sm"
-                            variant={active ? "danger" : "secondary"}
-                            loading={busy === s.id}
-                            onClick={() => toggle(s, active)}
-                            aria-label={`${active ? "Nonaktifkan" : "Aktifkan"} stasiun ${s.name}`}
-                          >
-                            {active ? "Nonaktifkan" : "Aktifkan"}
-                          </Button>
-                        </td>
-                      </tr>
+                      <Badge tone={active ? "success" : "neutral"}>
+                        {active ? "Aktif" : "Nonaktif"}
+                      </Badge>
                     );
-                  })}
-                </tbody>
-              </table>
-            </div>
-            <Pagination page={data.meta.current_page} lastPage={data.meta.last_page} total={data.meta.total} onChange={setPage} />
+                  },
+                },
+                {
+                  key: "actions",
+                  header: "Aksi",
+                  mobile: "action",
+                  className: "whitespace-nowrap text-right",
+                  cell: (s) => {
+                    const active = overrides[s.id] ?? s.is_active;
+                    return (
+                      <span className="inline-flex items-center gap-3">
+                        <Link
+                          href={`/admin/stations/${s.id}`}
+                          className="text-sm font-semibold text-brand-600 hover:underline"
+                        >
+                          Detail
+                        </Link>
+                        <Button
+                          size="sm"
+                          variant={active ? "danger" : "secondary"}
+                          loading={busy === s.id}
+                          onClick={() => toggle(s, active)}
+                          aria-label={`${active ? "Nonaktifkan" : "Aktifkan"} stasiun ${s.name}`}
+                        >
+                          {active ? "Nonaktifkan" : "Aktifkan"}
+                        </Button>
+                      </span>
+                    );
+                  },
+                },
+              ]}
+            />
+            <Pagination
+              page={data.meta.current_page}
+              lastPage={data.meta.last_page}
+              total={data.meta.total}
+              onChange={setPage}
+            />
           </>
         )}
       </Card>

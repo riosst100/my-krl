@@ -76,7 +76,7 @@ class SchedulesApiController extends Controller
 
     private function defaultStation(): string
     {
-        return strtoupper((string) (config('kci.sync_stations')[0] ?? 'THB'));
+        return strtoupper((string) (ScheduleSyncService::syncStationCodes()[0] ?? 'THB'));
     }
 
     private function respond(ScheduleSyncService $sync): JsonResponse
@@ -90,8 +90,8 @@ class SchedulesApiController extends Controller
                 'is_default' => $setting === null,
                 'updated_at' => $setting?->updated_at?->toIso8601String(),
                 'updated_by' => $setting?->updatedBy?->name,
-                // Stations whose timetable is synced (KCI_SYNC_STATIONS); empty = all active.
-                'sync_stations' => config('kci.sync_stations'),
+                // Stations whose timetable is synced (admin setting or KCI_SYNC_STATIONS); empty = all active.
+                'sync_stations' => ScheduleSyncService::syncStationCodes(),
                 'test_station' => $this->defaultStation(),
             ],
         ]);

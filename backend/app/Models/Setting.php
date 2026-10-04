@@ -13,6 +13,9 @@ class Setting extends Model
 
     public const SCHEDULES_API_URL = 'kci.schedules_api_url';
 
+    /** Comma-separated station codes whose timetable is synced (overrides KCI_SYNC_STATIONS). */
+    public const SYNC_STATIONS = 'kci.sync_stations';
+
     public const TRAIN_STOPS_API_URL = 'kci.train_stops_api_url';
 
     /** JSON map of KCI operational area id => name, e.g. {"0":"Jabodetabek","6":"Yogyakarta"}. */

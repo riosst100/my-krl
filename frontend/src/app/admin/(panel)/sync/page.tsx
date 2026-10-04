@@ -2,8 +2,22 @@
 
 import { useEffect, useState } from "react";
 import { ScheduleSyncPanel } from "@/components/admin/ScheduleSyncPanel";
-import { SYNC_TYPE_LABELS, SyncStatusBadge, TRIGGER_LABELS } from "@/components/admin/SyncStatusBadge";
-import { Card, EmptyState, ErrorState, PageHeader, Pagination, SelectField, TableSkeleton } from "@/components/ui";
+import { SyncStationsPanel } from "@/components/admin/SyncStationsPanel";
+import {
+  SYNC_TYPE_LABELS,
+  SyncStatusBadge,
+  TRIGGER_LABELS,
+} from "@/components/admin/SyncStatusBadge";
+import { DataTable } from "@/components/ui/DataTable";
+import {
+  Card,
+  EmptyState,
+  ErrorState,
+  PageHeader,
+  Pagination,
+  SelectField,
+  TableSkeleton,
+} from "@/components/ui";
 import { getSyncLogs } from "@/lib/api/admin";
 import { errorMessage } from "@/lib/api/client";
 import { formatDateTime, formatNumber } from "@/lib/format";
@@ -12,7 +26,9 @@ import { useApi } from "@/lib/hooks/useApi";
 export default function AdminSyncPage() {
   const [page, setPage] = useState(1);
   const [type, setType] = useState<"" | "schedules" | "stations">("");
-  const { data, error, loading, reload } = useApi(`sync|${page}|${type}`, () => getSyncLogs(page, type));
+  const { data, error, loading, reload } = useApi(`sync|${page}|${type}`, () =>
+    getSyncLogs(page, type),
+  );
 
   const inProgress = data?.meta.in_progress ?? false;
 
@@ -29,6 +45,8 @@ export default function AdminSyncPage() {
         title="Sinkronisasi KCI"
         description="Jadwal disinkronkan otomatis setiap hari, data stasiun setiap bulan (kelola di menu Stasiun)."
       />
+
+      <SyncStationsPanel onChanged={reload} />
 
       <ScheduleSyncPanel
         meta={data?.meta}
@@ -63,46 +81,95 @@ export default function AdminSyncPage() {
           <EmptyState title="Belum ada riwayat sinkronisasi" />
         ) : (
           <>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-muted">
-                  <tr>
-                    <th scope="col" className="px-4 py-3">#</th>
-                    <th scope="col" className="px-4 py-3">Jenis</th>
-                    <th scope="col" className="px-4 py-3">Status</th>
-                    <th scope="col" className="px-4 py-3">Pemicu</th>
-                    <th scope="col" className="px-4 py-3">Mulai</th>
-                    <th scope="col" className="px-4 py-3">Durasi</th>
-                    <th scope="col" className="px-4 py-3">Data</th>
-                    <th scope="col" className="px-4 py-3">Pesan</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-line">
-                  {data.data.map((log) => (
-                    <tr key={log.id} className="align-top">
-                      <td className="tabular px-4 py-3 text-muted">{log.id}</td>
-                      <td className="px-4 py-3 font-medium text-ink">{SYNC_TYPE_LABELS[log.type] ?? log.type}</td>
-                      <td className="px-4 py-3">
-                        <SyncStatusBadge status={log.status} />
-                      </td>
-                      <td className="px-4 py-3">
-                        {TRIGGER_LABELS[log.trigger] ?? log.trigger}
-                        {log.source && <span className="block text-xs text-muted">sumber: {log.source}</span>}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3 text-slate-600">{formatDateTime(log.started_at ?? log.created_at)}</td>
-                      <td className="tabular px-4 py-3 text-slate-600">{log.duration_seconds !== null ? `${log.duration_seconds} dtk` : "—"}</td>
-                      <td className="tabular px-4 py-3">{formatNumber(log.records_processed)}</td>
-                      <td className="max-w-xs px-4 py-3 text-xs text-red-700">
-                        <span className="line-clamp-2" title={log.error_message ?? undefined}>
-                          {log.error_message ?? ""}
+            <DataTable
+              rows={data.data}
+              rowKey={(log) => log.id}
+              caption="Riwayat sinkronisasi"
+              columns={[
+                {
+                  key: "type",
+                  header: "Jenis",
+                  mobile: "title",
+                  className: "font-medium text-ink",
+                  cell: (log) => (
+                    <span className="flex flex-wrap items-center gap-2">
+                      {SYNC_TYPE_LABELS[log.type] ?? log.type}
+                      <span className="tabular text-xs font-normal text-muted">
+                        #{log.id}
+                      </span>
+                    </span>
+                  ),
+                },
+                {
+                  key: "id",
+                  header: "#",
+                  mobile: "hide",
+                  className: "tabular text-muted",
+                  cell: (log) => log.id,
+                },
+                {
+                  key: "status",
+                  header: "Status",
+                  cell: (log) => <SyncStatusBadge status={log.status} />,
+                },
+                {
+                  key: "trigger",
+                  header: "Pemicu",
+                  cell: (log) => (
+                    <>
+                      {TRIGGER_LABELS[log.trigger] ?? log.trigger}
+                      {log.source && (
+                        <span className="block text-xs text-muted">
+                          sumber: {log.source}
                         </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <Pagination page={data.meta.current_page} lastPage={data.meta.last_page} total={data.meta.total} onChange={setPage} />
+                      )}
+                    </>
+                  ),
+                },
+                {
+                  key: "start",
+                  header: "Mulai",
+                  className: "whitespace-nowrap text-slate-600",
+                  cell: (log) =>
+                    formatDateTime(log.started_at ?? log.created_at),
+                },
+                {
+                  key: "dur",
+                  header: "Durasi",
+                  className: "tabular text-slate-600",
+                  cell: (log) =>
+                    log.duration_seconds !== null
+                      ? `${log.duration_seconds} dtk`
+                      : "—",
+                },
+                {
+                  key: "data",
+                  header: "Data",
+                  className: "tabular",
+                  cell: (log) => formatNumber(log.records_processed),
+                },
+                {
+                  key: "msg",
+                  header: "Pesan",
+                  className: "max-w-xs text-xs text-red-700",
+                  cell: (log) =>
+                    log.error_message ? (
+                      <span
+                        className="line-clamp-2 break-words"
+                        title={log.error_message}
+                      >
+                        {log.error_message}
+                      </span>
+                    ) : null,
+                },
+              ]}
+            />
+            <Pagination
+              page={data.meta.current_page}
+              lastPage={data.meta.last_page}
+              total={data.meta.total}
+              onChange={setPage}
+            />
           </>
         )}
       </Card>

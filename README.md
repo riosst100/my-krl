@@ -1,4 +1,4 @@
-# KRL Schedule Indonesia
+# My KRL
 
 Jadwal KRL Commuter Line Jabodetabek: Laravel REST API + Next.js (situs publik & panel admin) + PostgreSQL.
 
@@ -170,7 +170,7 @@ Compose injects the database host/credentials, `APP_URL`, `FRONTEND_URL` and `SA
 | --- | --- |
 | `APP_URL`, `FRONTEND_URL` | API and Next.js origins (CORS allows exactly `FRONTEND_URL`) |
 | `SANCTUM_STATEFUL_DOMAINS` | `host:port` of the frontend; requests from it get cookie sessions |
-| `SESSION_LIFETIME` | Idle minutes before a session expires (admin sessions end here) |
+| `SESSION_LIFETIME` | Session lifetime in minutes (default `525600` = 1 year). The cookie is renewed on every visit, so users and admins stay signed in until they are idle for a year |
 | `SESSION_DOMAIN`, `SESSION_SECURE_COOKIE`, `SESSION_SAME_SITE` | Cookie scope; set `SESSION_SECURE_COOKIE=true` behind HTTPS |
 | `DB_*` | PostgreSQL connection |
 | `ADMIN_NAME`, `ADMIN_EMAIL`, `ADMIN_PASSWORD` | Initial admin created by the seeder |
@@ -224,7 +224,7 @@ GET  /api/v1/auth/me              → current user
 
 - `/api/v1/admin/auth/login` signs in on a dedicated `admin` session guard. A website login never grants admin access, and admin login does not sign you in on the public site.
 - Only users with `role = admin` can log in there; every admin request re-checks the role in the database (`EnsureUserIsAdmin`), so a demoted admin loses access immediately.
-- Admin sessions are not "remembered": they end after `SESSION_LIFETIME` minutes of inactivity.
+- Admin sessions use the same 1-year `SESSION_LIFETIME` (renewed on every visit); there is no separate "remember" cookie for admins.
 - The Next.js `/admin/*` pages use `AdminAuthProvider` and redirect to `/admin/login` when there is no admin session; the API enforces the same rules independently.
 - Roles are never accepted from the client on registration (`role` is not mass-assignable); only an admin can change another user's role, and never their own.
 
@@ -334,13 +334,14 @@ All responses are JSON: `{"data": ..., "meta": {...}}`. Errors: `{"message": "..
 
 ### Favourite stations (signed-in user)
 
-Favourites are an account feature: **favourite routes (departure → destination station, 1 to 4)** are chosen in a dialog on the homepage right after signing in (mandatory until the first route exists) and stored on the account. The homepage ("Rute Favorit") then shows the next 2 trains of each route that stop at the destination; routes can be changed later ("Ubah rute"). Guests see the **soonest departures from now** across all stations (`GET /schedules/upcoming`) plus an invitation to sign up.
+Favourites are an account feature: **favourite routes (departure → destination station, 1 to 4)** are chosen in a dialog on the homepage right after signing in (mandatory until the first route exists) and stored on the account. The homepage ("Rute Favorit") then shows the next 2 trains of each route that stop at the destination; routes can be changed later ("Ubah Rute Favorit"). Guests see the **soonest departures from now** across all stations (`GET /schedules/upcoming`) plus an invitation to sign up.
 
 | Method | Path | Notes |
 | --- | --- | --- |
 | GET | `/me/favorite-routes` | ordered list of `{from, to}`; `meta.min` = 1, `meta.max` = 4 |
 | PUT | `/me/favorite-routes` | `{"routes": [{"from": "THB", "to": "SUD"}]}` — 1–4 distinct routes between different active stations |
 | GET | `/me/favorite-routes/departures?limit=2` | next trains per favourite route (needs train stop data) |
+| GET | `/schedules/trains/{trainNumber}/stops` | public: every stop of a train (latest timetable) with station name, time and transit flag; powers "Lihat perjalanan" |
 
 ### Stations & schedules (public)
 

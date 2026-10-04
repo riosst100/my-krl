@@ -211,3 +211,28 @@ export async function triggerSync(dayOffset: 0 | 1 = 0): Promise<SyncLog> {
   const res = await apiFetch<{ data: SyncLog }>("/admin/sync", { method: "POST", body: { day_offset: dayOffset } });
   return res.data;
 }
+
+// --- Stations whose schedules are synced -----------------------------------------
+
+export interface SyncStationsSetting {
+  /** Station codes in effect (empty = every active station). */
+  stations: string[];
+  /** KCI_SYNC_STATIONS from the environment. */
+  default_stations: string[];
+  is_default: boolean;
+  active_stations: number;
+  updated_at: string | null;
+  updated_by: string | null;
+}
+
+export async function getSyncStationsSetting(): Promise<SyncStationsSetting> {
+  return (await apiFetch<{ data: SyncStationsSetting }>("/admin/settings/sync-stations")).data;
+}
+
+export async function saveSyncStations(stations: string[]): Promise<SyncStationsSetting> {
+  return (await apiFetch<{ data: SyncStationsSetting }>("/admin/settings/sync-stations", { method: "PUT", body: { stations } })).data;
+}
+
+export async function resetSyncStations(): Promise<SyncStationsSetting> {
+  return (await apiFetch<{ data: SyncStationsSetting }>("/admin/settings/sync-stations", { method: "DELETE" })).data;
+}

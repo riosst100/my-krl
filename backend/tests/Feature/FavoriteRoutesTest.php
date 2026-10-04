@@ -104,6 +104,23 @@ class FavoriteRoutesTest extends TestCase
         $this->getJson('/api/v1/me/favorite-routes/departures?limit=50')->assertUnprocessable();
     }
 
+    public function test_train_stops_are_listed_in_order(): void
+    {
+        $today = Schedule::query()->max('service_date') ?? now()->toDateString();
+        $thb = Station::where('code', 'THB')->first();
+        TrainStop::create(['service_date' => $today, 'train_number' => '5128C', 'sequence' => 2, 'station_code' => 'XXX', 'station_id' => null, 'time' => '16:40:00']);
+        TrainStop::create(['service_date' => $today, 'train_number' => '5128C', 'sequence' => 1, 'station_code' => 'THB', 'station_id' => $thb->id, 'time' => '16:24:00']);
+
+        $this->getJson('/api/v1/schedules/trains/5128C/stops')
+            ->assertOk()
+            ->assertJsonCount(2, 'data')
+            ->assertJsonPath('data.0.station.name', 'Tanah Abang')
+            ->assertJsonPath('data.0.time', '16:24')
+            ->assertJsonPath('data.1.station.name', 'XXX');
+
+        $this->getJson('/api/v1/schedules/trains/NOPE/stops')->assertNotFound();
+    }
+
     public function test_next_departures_start_from_now(): void
     {
         $this->travelTo(now()->setTime(10, 0));

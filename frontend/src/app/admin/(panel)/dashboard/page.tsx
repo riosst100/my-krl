@@ -62,7 +62,7 @@ export default function DashboardPage() {
             {loading || !data ? (
               <Skeleton className="mt-4 h-16 w-full" />
             ) : data.last_sync ? (
-              <dl className="mt-4 grid gap-4 text-sm sm:grid-cols-5">
+              <dl className="mt-4 grid grid-cols-2 gap-4 text-sm lg:grid-cols-5">
                 <Item label="Mulai" value={formatDateTime(data.last_sync.started_at)} />
                 <Item label="Selesai" value={formatDateTime(data.last_sync.finished_at)} />
                 <Item label="Data diproses" value={formatNumber(data.last_sync.records_processed)} />
@@ -72,7 +72,7 @@ export default function DashboardPage() {
                   value={data.last_station_sync ? formatDateTime(data.last_station_sync.finished_at ?? data.last_station_sync.created_at) : "Belum pernah"}
                 />
                 {data.last_sync.error_message && (
-                  <div className="sm:col-span-5">
+                  <div className="col-span-2 lg:col-span-5">
                     <dt className="text-muted">Pesan error</dt>
                     <dd className="mt-1 rounded-lg bg-red-50 p-3 font-mono text-xs text-red-800">{data.last_sync.error_message}</dd>
                   </div>

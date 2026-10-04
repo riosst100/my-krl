@@ -143,6 +143,38 @@ class SchedulesApiTest extends TestCase
         Http::assertNothingSent();
     }
 
+    public function test_admin_chooses_which_stations_are_synced(): void
+    {
+        Setting::put(Setting::SCHEDULES_API_URL, self::URL);
+        config(['kci.sync_stations' => ['THB']]);
+        Http::fake(['schedules.example.test/*' => Http::response(self::PAYLOAD)]);
+        $admin = User::factory()->admin()->create();
+
+        $this->actingAs($admin, 'admin')->fromFrontend()
+            ->getJson('/api/v1/admin/settings/sync-stations')
+            ->assertOk()
+            ->assertJsonPath('data.stations', ['THB'])
+            ->assertJsonPath('data.is_default', true);
+
+        $this->putJson('/api/v1/admin/settings/sync-stations', ['stations' => []])->assertUnprocessable()->assertJsonValidationErrors('stations');
+        $this->putJson('/api/v1/admin/settings/sync-stations', ['stations' => ['THB', 'XXX']])->assertUnprocessable()->assertJsonValidationErrors('stations.1');
+
+        $this->putJson('/api/v1/admin/settings/sync-stations', ['stations' => ['thb', 'SUD', 'sud']])
+            ->assertOk()
+            ->assertJsonPath('data.stations', ['THB', 'SUD'])
+            ->assertJsonPath('data.is_default', false)
+            ->assertJsonPath('data.default_stations', ['THB']);
+
+        // The scheduled/manual sync now fetches exactly the chosen stations.
+        $service = $this->app->make(ScheduleSyncService::class);
+        $service->run($service->createLog('console'), now(), 1);
+        Http::assertSent(fn ($r) => str_contains($r->url(), 'stationid=THB&'));
+        Http::assertSent(fn ($r) => str_contains($r->url(), 'stationid=SUD&'));
+        Http::assertSentCount(2);
+
+        $this->deleteJson('/api/v1/admin/settings/sync-stations')->assertOk()->assertJsonPath('data.stations', ['THB'])->assertJsonPath('data.is_default', true);
+    }
+
     public function test_admin_can_configure_and_test_the_url(): void
     {
         config(['kci.schedules_api_url' => self::URL]);

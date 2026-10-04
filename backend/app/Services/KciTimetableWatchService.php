@@ -23,7 +23,7 @@ class KciTimetableWatchService
 
     public function watchedStation(): string
     {
-        return strtoupper((string) (config('kci.watch_station') ?: (config('kci.sync_stations')[0] ?? 'THB')));
+        return strtoupper((string) (config('kci.watch_station') ?: (ScheduleSyncService::syncStationCodes()[0] ?? 'THB')));
     }
 
     public function check(?string $stationCode = null): KciTimetableCheck

@@ -27,3 +27,16 @@ export async function getAvailableDates(): Promise<{ dates: string[]; today: str
   const res = await apiFetch<{ data: string[]; meta: { today: string } }>("/schedules/dates");
   return { dates: res.data, today: res.meta.today };
 }
+
+export interface TrainStopInfo {
+  sequence: number;
+  station: { code: string; name: string };
+  time: string;
+  is_transit: boolean;
+}
+
+/** Every stop of one train in the latest timetable, in order. */
+export async function getTrainStops(trainNumber: string, signal?: AbortSignal): Promise<TrainStopInfo[]> {
+  const res = await apiFetch<{ data: TrainStopInfo[] }>(`/schedules/trains/${encodeURIComponent(trainNumber)}/stops`, { signal });
+  return res.data;
+}

@@ -10,8 +10,8 @@ const jakarta = Plus_Jakarta_Sans({
 
 export const metadata: Metadata = {
   title: {
-    default: "Jadwal KRL — Jadwal Commuter Line Jabodetabek",
-    template: "%s · Jadwal KRL",
+    default: "My KRL — Jadwal Commuter Line Jabodetabek",
+    template: "%s · My KRL",
   },
   description: "Cek jadwal keberangkatan KRL Commuter Line di setiap stasiun Jabodetabek.",
 };

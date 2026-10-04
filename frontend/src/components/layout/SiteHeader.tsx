@@ -20,7 +20,7 @@ export function Logo() {
       >
         KRL
       </span>
-      <span className="text-[15px]">Jadwal KRL</span>
+      <span className="text-[15px]">My KRL</span>
     </Link>
   );
 }

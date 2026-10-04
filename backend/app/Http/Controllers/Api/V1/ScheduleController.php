@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\ScheduleFilterRequest;
 use App\Http\Resources\ScheduleResource;
 use App\Models\Station;
+use App\Models\TrainStop;
 use App\Services\ScheduleSearchService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -113,6 +114,35 @@ class ScheduleController extends Controller
                 'has_schedules_today' => $this->search->hasSchedulesToday($station),
                 'last_synced_at' => $this->search->lastSyncedAt(),
             ],
+        ]);
+    }
+
+    /**
+     * GET /schedules/trains/{trainNumber}/stops — every stop of one train (latest timetable).
+     */
+    public function trainStops(ScheduleFilterRequest $request, string $trainNumber): JsonResponse
+    {
+        $date = $request->serviceDate();
+        $stops = TrainStop::query()
+            ->with('station:id,code,name,slug')
+            ->whereDate('service_date', $date)
+            ->where('train_number', $trainNumber)
+            ->orderBy('sequence')
+            ->get();
+
+        abort_if($stops->isEmpty(), 404, 'No stops found for this train.');
+
+        return response()->json([
+            'data' => $stops->map(fn (TrainStop $stop) => [
+                'sequence' => $stop->sequence,
+                'station' => [
+                    'code' => $stop->station_code,
+                    'name' => $stop->station?->name ?? $stop->station_code,
+                ],
+                'time' => substr($stop->time, 0, 5),
+                'is_transit' => $stop->is_transit,
+            ])->values(),
+            'meta' => ['train_number' => $trainNumber, 'date' => $date],
         ]);
     }
 
