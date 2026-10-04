@@ -124,7 +124,7 @@ class ProdSyncTest extends TestCase
 
     public function test_admin_pushes_the_configured_stations_to_prod_with_progress(): void
     {
-        config(['kci.push_url' => 'https://prod.example.test', 'kci.push_token' => self::TOKEN]);
+        config(['kci.push_url' => 'https://api-krl.inovasionline.com', 'kci.push_token' => self::TOKEN]);
         Setting::put(Setting::SCHEDULES_API_URL, 'https://kci.example.test/api/krl/schedules?stationid=THB&timefrom=00%3A00&timeto=23%3A59');
         Setting::put(Setting::TRAIN_STOPS_API_URL, '');
         Setting::put(Setting::SYNC_STATIONS, 'THB,SUD');
@@ -133,8 +133,8 @@ class ProdSyncTest extends TestCase
 
         Http::fake([
             'kci.example.test/*' => Http::response(self::PAYLOAD),
-            'prod.example.test/api/v1/ingest/start' => Http::response(['data' => ['run_id' => 42]], 201),
-            'prod.example.test/*' => Http::response(['data' => []]),
+            'api-krl.inovasionline.com/api/v1/ingest/start' => Http::response(['data' => ['run_id' => 42]], 201),
+            'api-krl.inovasionline.com/*' => Http::response(['data' => []]),
         ]);
 
         $admin = User::factory()->admin()->create();
@@ -151,12 +151,13 @@ class ProdSyncTest extends TestCase
         $this->assertSame(2, $log->stations_processed);
         $this->assertSame(4, $log->records_processed);
         $this->assertSame(42, $log->meta['run_id']);
+        $this->assertSame('api-krl.inovasionline.com', $log->meta['target'], 'the long host name fits (sync_logs.source is varchar(20))');
 
         $paths = collect(Http::recorded())->map(fn ($pair) => parse_url($pair[0]->url(), PHP_URL_PATH))->filter(fn ($p) => str_starts_with((string) $p, '/api/v1/ingest'))->values();
         $this->assertSame(['/api/v1/ingest/stations', '/api/v1/ingest/start', '/api/v1/ingest/schedules', '/api/v1/ingest/schedules', '/api/v1/ingest/stops', '/api/v1/ingest/finish'], $paths->all());
 
         // Every request carries the token; stations were fetched from KCI one by one.
-        Http::assertSent(fn (Request $r) => ! str_contains($r->url(), 'prod.example.test') || $r->hasHeader('Authorization', 'Bearer '.self::TOKEN));
+        Http::assertSent(fn (Request $r) => ! str_contains($r->url(), 'inovasionline.com') || $r->hasHeader('Authorization', 'Bearer '.self::TOKEN));
         Http::assertSent(fn (Request $r) => str_contains($r->url(), 'kci.example.test') && str_contains($r->url(), 'stationid=SUD'));
         Http::assertSent(fn (Request $r) => str_ends_with($r->url(), '/ingest/stops') && count($r['trains']) === 1 && count($r['trains'][0]['stops']) === 2);
         Http::assertSent(fn (Request $r) => str_ends_with($r->url(), '/ingest/finish') && $r['status'] === 'success' && $r['stations'] === ['THB', 'SUD']);
@@ -164,7 +165,7 @@ class ProdSyncTest extends TestCase
         $this->getJson('/api/v1/admin/sync-logs')
             ->assertOk()
             ->assertJsonPath('meta.mode', 'local')
-            ->assertJsonPath('meta.push_target', 'prod.example.test')
+            ->assertJsonPath('meta.push_target', 'api-krl.inovasionline.com')
             ->assertJsonPath('meta.last_successful_sync.id', $log->id);
     }
 
@@ -187,6 +188,7 @@ class ProdSyncTest extends TestCase
         $this->assertSame(SyncStatus::Failed, $log->status);
         $this->assertStringContainsString('HTTP 401', $log->error_message);
         $this->assertStringContainsString('Invalid ingest token.', $log->error_message);
+        $this->assertTrue($log->meta['data_ready'], 'the data was fetched, so the admin can retry just the sending');
     }
 
     // --- Manual import of pasted KCI JSON ------------------------------------------------
@@ -282,5 +284,6 @@ class ProdSyncTest extends TestCase
         $failed = SyncLog::where('type', SyncLog::TYPE_PROD_PUSH)->latest('id')->first();
         $this->assertSame(SyncStatus::Failed, $failed->status);
         $this->assertStringContainsString('database lokal', $failed->error_message);
+        $this->assertArrayNotHasKey('data_ready', $failed->meta, 'nothing to retry when there was no data');
     }
 }

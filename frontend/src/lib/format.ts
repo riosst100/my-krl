@@ -3,14 +3,19 @@ export const TIMEZONE = "Asia/Jakarta";
 
 /** Today's date in Jakarta as YYYY-MM-DD. */
 export function todayInJakarta(): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: TIMEZONE }).format(new Date());
+  return new Intl.DateTimeFormat("en-CA", { timeZone: TIMEZONE }).format(
+    new Date(),
+  );
 }
 
 /** Current time in Jakarta as HH:MM. */
 export function nowTimeInJakarta(): string {
-  return new Intl.DateTimeFormat("en-GB", { timeZone: TIMEZONE, hour: "2-digit", minute: "2-digit", hour12: false }).format(
-    new Date(),
-  );
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: TIMEZONE,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date());
 }
 
 export function isValidDate(value: string | undefined | null): value is string {
@@ -20,31 +25,53 @@ export function isValidDate(value: string | undefined | null): value is string {
 /** "2026-10-03" -> "Sabtu, 3 Oktober 2026" */
 export function formatDateLong(date: string): string {
   const [y, m, d] = date.split("-").map(Number);
-  return new Intl.DateTimeFormat("id-ID", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }).format(
-    new Date(Date.UTC(y, m - 1, d)),
-  );
+  return new Intl.DateTimeFormat("id-ID", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(Date.UTC(y, m - 1, d)));
 }
 
 /** "2026-10-03" -> "3 Okt" */
 export function formatDateShort(date: string): string {
   const [y, m, d] = date.split("-").map(Number);
-  return new Intl.DateTimeFormat("id-ID", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" }).format(
-    new Date(Date.UTC(y, m - 1, d)),
-  );
+  return new Intl.DateTimeFormat("id-ID", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    timeZone: "UTC",
+  }).format(new Date(Date.UTC(y, m - 1, d)));
 }
 
 /** ISO timestamp -> "3 Okt 2026, 13.34" in WIB. */
 export function formatDateTime(iso: string | null | undefined): string {
   if (!iso) return "—";
-  return new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short", timeZone: TIMEZONE }).format(new Date(iso));
+  return new Intl.DateTimeFormat("id-ID", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: TIMEZONE,
+  }).format(new Date(iso));
 }
 
 /** ISO timestamp -> "Sabtu, 3 Oktober 2026 pukul 14.41 WIB". */
 export function formatDateTimeLong(iso: string | null | undefined): string {
   if (!iso) return "—";
   const d = new Date(iso);
-  const date = new Intl.DateTimeFormat("id-ID", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: TIMEZONE }).format(d);
-  const time = new Intl.DateTimeFormat("id-ID", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: TIMEZONE }).format(d);
+  const date = new Intl.DateTimeFormat("id-ID", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: TIMEZONE,
+  }).format(d);
+  const time = new Intl.DateTimeFormat("id-ID", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: TIMEZONE,
+  }).format(d);
   return `${date} pukul ${time} WIB`;
 }
 
@@ -77,21 +104,33 @@ export function jakartaClock(at: Date = new Date()): JakartaClock {
   );
   return {
     date: `${parts.year}-${parts.month}-${parts.day}`,
-    seconds: Number(parts.hour) * 3600 + Number(parts.minute) * 60 + Number(parts.second),
+    seconds:
+      Number(parts.hour) * 3600 +
+      Number(parts.minute) * 60 +
+      Number(parts.second),
   };
 }
 
 /** Seconds from `clock` until a departure (service date + HH:MM), negative once it has left. */
-export function secondsUntil(serviceDate: string, time: string, clock: JakartaClock): number {
+export function secondsUntil(
+  serviceDate: string,
+  time: string,
+  clock: JakartaClock,
+): number {
   const [y, m, d] = serviceDate.split("-").map(Number);
   const [cy, cm, cd] = clock.date.split("-").map(Number);
-  const days = Math.round((Date.UTC(y, m - 1, d) - Date.UTC(cy, cm - 1, cd)) / 86_400_000);
+  const days = Math.round(
+    (Date.UTC(y, m - 1, d) - Date.UTC(cy, cm - 1, cd)) / 86_400_000,
+  );
   const [hh, mm] = time.split(":").map(Number);
   return days * 86_400 + hh * 3600 + mm * 60 - clock.seconds;
 }
 
 /** Departures stay listed up to this long after their time ("berangkat sekarang"). */
 export const DEPARTED_GRACE_SECONDS = 60;
+
+/** A train leaving within this many seconds is flagged as urgent (red) in the lists. */
+export const URGENT_SECONDS = 300;
 
 /** 4800 -> "1 jam 20 menit lagi", 600 -> "10 menit lagi", 30 -> "1 menit lagi", 0 -> "berangkat sekarang". */
 export function formatCountdown(seconds: number): string {
@@ -114,7 +153,10 @@ export function minutesBetween(a: string, b: string): number {
 /** "COMMUTER LINE BOGOR" -> "Bogor Line" */
 export function lineLabel(name: string | undefined | null): string {
   if (!name) return "KRL";
-  const short = name.replace(/^COMMUTER LINE\s*/i, "").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+  const short = name
+    .replace(/^COMMUTER LINE\s*/i, "")
+    .toLowerCase()
+    .replace(/\b\w/g, (c) => c.toUpperCase());
   return short ? `Line ${short}` : name;
 }
 
@@ -126,7 +168,10 @@ export const FIRST_TRAIN_TIME = "04:00";
  * service has ended (the list then shows tomorrow's first trains) or it is
  * still before the first train. Null when trains are running normally.
  */
-export function serviceBreakNotice(departures: { service_date: string; departure_time: string }[], clock: JakartaClock): string | null {
+export function serviceBreakNotice(
+  departures: { service_date: string; departure_time: string }[],
+  clock: JakartaClock,
+): string | null {
   const first = departures[0];
   if (!first) return null;
   if (first.service_date > clock.date) {

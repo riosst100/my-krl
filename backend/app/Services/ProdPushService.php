@@ -59,7 +59,8 @@ class ProdPushService
             'status' => SyncStatus::Queued,
             'trigger' => $trigger,
             'triggered_by' => $userId,
-            'source' => self::targetHost(),
+            // sync_logs.source is varchar(20): the host goes in meta.target.
+            'source' => 'prod',
             'meta' => ['target' => self::targetHost(), 'fetch' => $fetch, 'progress' => $this->progressMeta($fetch ? 'fetch_schedules' : 'stations', 0, 1, fetch: $fetch)],
         ]);
     }
@@ -100,6 +101,9 @@ class ProdPushService
             if ($sent->isEmpty()) {
                 return $this->finish($log, SyncStatus::Failed, 'Tidak ada jadwal hari ini di database lokal untuk stasiun yang dipilih. Ambil dari KCI atau import JSON dulu.');
             }
+
+            // The data is on this machine now: if sending fails, the admin can retry without fetching again.
+            $log->update(['meta' => [...$log->fresh()->meta, 'data_ready' => true]]);
 
             // 2) local database -> production
             $http = $this->http();

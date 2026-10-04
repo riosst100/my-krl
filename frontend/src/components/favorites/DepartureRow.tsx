@@ -1,6 +1,11 @@
 import { LineDot } from "@/components/ui";
 import type { Schedule } from "@/lib/api/types";
-import { lineLabel } from "@/lib/format";
+import {
+  DEPARTED_GRACE_SECONDS,
+  formatCountdown,
+  lineLabel,
+  URGENT_SECONDS,
+} from "@/lib/format";
 
 /**
  * One train: the departure and the arrival as two separate boxes (arrival at
@@ -11,20 +16,23 @@ export function DepartureRow({
   schedule: s,
   fromName,
   toName,
-  first,
-  countdown,
+  secondsLeft,
   onOpen,
 }: {
   schedule: Schedule;
   fromName: string;
   /** Chosen destination station; without it the train's final destination is used. */
   toName?: string;
-  first: boolean;
-  /** Shown as a badge when given (e.g. "5 menit lagi"). */
-  countdown?: string;
+  /** Seconds until departure; shown as a countdown badge. Under 5 minutes the row turns red. */
+  secondsLeft?: number;
   onOpen: () => void;
 }) {
   // With a chosen destination: arrival there. Otherwise: arrival at the final destination.
+  // Leaves within 5 minutes (or has just left): the whole row is red.
+  const urgent =
+    secondsLeft !== undefined &&
+    secondsLeft <= URGENT_SECONDS &&
+    secondsLeft > -DEPARTED_GRACE_SECONDS;
   const arrival = toName
     ? s.to_station_arrival_time
     : s.destination_arrival_time;
@@ -33,7 +41,7 @@ export function DepartureRow({
   return (
     <li
       // Rows share the route card: the next train is tinted, the others are separated by a hairline.
-      className={`p-3 sm:p-4 ${first ? "rounded-xl bg-brand-50/70" : "border-t border-line"}`}
+      className={`p-3 sm:p-4 ${urgent ? "rounded-xl bg-brand-100/80" : "border-t border-line first:border-t-0"}`}
     >
       <div className="flex items-center justify-between gap-2">
         <p className="flex min-w-0 items-center gap-1.5 text-[11px] text-muted sm:text-xs">
@@ -44,11 +52,11 @@ export function DepartureRow({
           <span aria-hidden="true">·</span>
           <span className="truncate">{lineLabel(s.line?.name)}</span>
         </p>
-        {countdown && (
+        {secondsLeft !== undefined && (
           <span
-            className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold sm:text-xs ${first ? "bg-brand-100 text-brand-700" : "bg-slate-100 text-slate-600"}`}
+            className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold sm:text-xs ${urgent ? "bg-brand-600 text-white" : "bg-slate-100 text-slate-600"}`}
           >
-            {countdown}
+            {formatCountdown(secondsLeft)}
           </span>
         )}
       </div>

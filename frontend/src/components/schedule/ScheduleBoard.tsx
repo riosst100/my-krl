@@ -7,12 +7,7 @@ import { Card, cx, EmptyState, ErrorState, Skeleton } from "@/components/ui";
 import { errorMessage } from "@/lib/api/client";
 import { getStationSchedules } from "@/lib/api/schedules";
 import type { Schedule } from "@/lib/api/types";
-import {
-  formatCountdown,
-  formatDateLong,
-  formatDateTime,
-  secondsUntil,
-} from "@/lib/format";
+import { formatDateLong, formatDateTime, secondsUntil } from "@/lib/format";
 import { useApi } from "@/lib/hooks/useApi";
 import { useJakartaClock } from "@/lib/hooks/useJakartaClock";
 
@@ -56,11 +51,6 @@ export function ScheduleBoard({ stationCode, to }: Props) {
     return list;
   }, [data, destination, isToday, hideDeparted, clock]);
 
-  const next =
-    isToday && clock
-      ? rows.find((s) => s.departure_time >= clock.now)
-      : undefined;
-  const nextId = next?.id;
   if (loading && !data) return <BoardSkeleton />;
 
   if (error) {
@@ -166,12 +156,9 @@ export function ScheduleBoard({ stationCode, to }: Props) {
                 schedule={s}
                 fromName={meta.station.name}
                 toName={trip?.name}
-                first={s.id === nextId}
-                countdown={
+                secondsLeft={
                   isToday && live
-                    ? formatCountdown(
-                        secondsUntil(s.service_date, s.departure_time, live),
-                      )
+                    ? secondsUntil(s.service_date, s.departure_time, live)
                     : undefined
                 }
                 onOpen={() => setSelected(s)}

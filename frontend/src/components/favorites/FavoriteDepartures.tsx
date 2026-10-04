@@ -17,7 +17,6 @@ import type { Schedule, Station } from "@/lib/api/types";
 import { useFavoriteRoutes } from "@/lib/favorites/useFavoriteRoutes";
 import {
   DEPARTED_GRACE_SECONDS,
-  formatCountdown,
   secondsUntil,
   serviceBreakNotice,
   type JakartaClock,
@@ -190,16 +189,17 @@ function RouteCard({
             </p>
           )}
           <ol className="mt-3">
-            {departures.map((s, i) => (
+            {departures.map((s) => (
               <DepartureRow
                 key={s.id}
                 schedule={s}
                 fromName={from.name}
                 toName={to.name}
                 onOpen={() => setSelected(s)}
-                first={i === 0}
-                countdown={formatCountdown(
-                  secondsUntil(s.service_date, s.departure_time, clock),
+                secondsLeft={secondsUntil(
+                  s.service_date,
+                  s.departure_time,
+                  clock,
                 )}
               />
             ))}

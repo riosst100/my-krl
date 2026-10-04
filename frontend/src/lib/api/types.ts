@@ -135,6 +135,8 @@ export interface SyncLog {
     run_id?: number;
     /** Sync to prod: false = the local data was sent without fetching from KCI first. */
     fetch?: boolean;
+    /** Sync to prod: the data is stored locally, so a failed push can be retried without fetching. */
+    data_ready?: boolean;
     trains?: number;
     stops?: number;
     progress?: SyncProgress;

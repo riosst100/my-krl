@@ -37,10 +37,11 @@ export function ProdPushPanel({
   const running = meta?.in_progress ?? false;
   const progress = running ? last?.meta?.progress : undefined;
 
-  const start = async () => {
+  // fetch=false: resend the data that is already on this machine (retry after a failed push).
+  const start = async (fetch = fetchFirst) => {
     setStarting(true);
     try {
-      await triggerPushToProd(fetchFirst);
+      await triggerPushToProd(fetch);
       toast("Sync ke prod dimulai. Progres tampil di bawah.", "success");
       onChanged();
     } catch (err) {
@@ -99,7 +100,7 @@ export function ProdPushPanel({
           </p>
         </div>
         <Button
-          onClick={start}
+          onClick={() => start()}
           loading={starting || running}
           disabled={!meta || running}
           className="h-11 shrink-0"
@@ -132,6 +133,8 @@ export function ProdPushPanel({
         <LastResult
           log={last}
           lastSuccessAt={meta?.last_successful_sync?.finished_at ?? null}
+          onRetry={() => start(false)}
+          retrying={starting}
         />
       )}
     </Card>
@@ -205,10 +208,15 @@ function LastResult({
   log,
   lastSuccessAt,
   received,
+  onRetry,
+  retrying,
 }: {
   log: SyncLogsMeta["last_sync"];
   lastSuccessAt: string | null;
   received?: boolean;
+  /** Resend the data already stored locally (only offered after a failed push). */
+  onRetry?: () => void;
+  retrying?: boolean;
 }) {
   if (!log) {
     return (
@@ -248,6 +256,22 @@ function LastResult({
       {log.error_message && (
         <div className="mt-2">
           <Alert>{log.error_message}</Alert>
+        </div>
+      )}
+      {log.status === "failed" && log.meta?.data_ready && onRetry && (
+        <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-[13px] text-slate-600">
+            Data sudah diunduh di komputer ini. Hanya pengiriman ke prod yang
+            gagal, jadi tidak perlu mengambil dari KCI lagi.
+          </p>
+          <Button
+            variant="secondary"
+            onClick={onRetry}
+            loading={retrying}
+            className="shrink-0"
+          >
+            Coba kirim lagi
+          </Button>
         </div>
       )}
       {!ok && lastSuccessAt && (
