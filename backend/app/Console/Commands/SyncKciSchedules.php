@@ -11,6 +11,7 @@ class SyncKciSchedules extends Command
 {
     protected $signature = 'kci:sync-schedules
         {--date= : First service date to sync (Y-m-d), defaults to today}
+        {--day-offset=0 : Without --date: sync for today + this many days (the scheduled runs use 0)}
         {--days= : Number of days to sync, defaults to KCI_SYNC_DAYS}
         {--station=* : Only sync these station codes (repeatable), defaults to KCI_SYNC_STATIONS}
         {--trigger=console : Recorded in sync_logs (console or schedule)}';
@@ -19,7 +20,9 @@ class SyncKciSchedules extends Command
 
     public function handle(ScheduleSyncService $sync): int
     {
-        $from = $this->option('date') ? CarbonImmutable::createFromFormat('Y-m-d', $this->option('date')) : null;
+        $from = $this->option('date')
+            ? CarbonImmutable::createFromFormat('Y-m-d', $this->option('date'))
+            : CarbonImmutable::today()->addDays((int) $this->option('day-offset'));
         $days = $this->option('days') !== null ? (int) $this->option('days') : null;
 
         $log = $sync->createLog($this->option('trigger'), status: SyncStatus::Running);

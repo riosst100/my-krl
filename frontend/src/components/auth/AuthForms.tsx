@@ -7,10 +7,11 @@ import { Alert, Button, Card, TextField } from "@/components/ui";
 import { useToast } from "@/components/ui/Toast";
 import { ApiError, errorMessage } from "@/lib/api/client";
 import { useAuth } from "@/lib/auth/AuthProvider";
+import { useHydrated } from "@/lib/hooks/useHydrated";
 
 /** Only allow same-site relative redirects (prevents open redirects). */
 function safeNext(value: string | null): string {
-  return value && value.startsWith("/") && !value.startsWith("//") && !value.startsWith("/admin") ? value : "/account";
+  return value && value.startsWith("/") && !value.startsWith("//") && !value.startsWith("/admin") ? value : "/";
 }
 
 function useRedirectIfAuthenticated(next: string) {
@@ -30,6 +31,8 @@ export function LoginForm() {
   const [form, setForm] = useState({ email: "", password: "" });
   const [error, setError] = useState<ApiError | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // Until hydrated a click would submit natively and reload the page (wiping the form).
+  const hydrated = useHydrated();
 
   useRedirectIfAuthenticated(next);
 
@@ -70,7 +73,7 @@ export function LoginForm() {
           error={error?.field("password")}
           onChange={(e) => setForm({ ...form, password: e.target.value })}
         />
-        <Button type="submit" size="lg" className="w-full" loading={submitting}>
+        <Button type="submit" size="lg" className="w-full" loading={submitting} disabled={!hydrated}>
           Masuk
         </Button>
       </form>
@@ -91,8 +94,10 @@ export function RegisterForm() {
   const [form, setForm] = useState({ name: "", email: "", password: "", password_confirmation: "" });
   const [error, setError] = useState<ApiError | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // Until hydrated a click would submit natively and reload the page (wiping the form).
+  const hydrated = useHydrated();
 
-  useRedirectIfAuthenticated("/account");
+  useRedirectIfAuthenticated("/");
 
   const set = (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => setForm({ ...form, [key]: e.target.value });
 
@@ -103,7 +108,7 @@ export function RegisterForm() {
     try {
       await register(form);
       toast("Akun berhasil dibuat.", "success");
-      router.replace("/account");
+      router.replace("/");
     } catch (err) {
       setError(err instanceof ApiError ? err : new ApiError(0, errorMessage(err)));
     } finally {
@@ -112,7 +117,7 @@ export function RegisterForm() {
   };
 
   return (
-    <AuthCard title="Daftar" subtitle="Buat akun untuk fitur personal seperti stasiun favorit (segera hadir).">
+    <AuthCard title="Daftar" subtitle="Buat akun, lalu pilih rute favorit Anda — kereta berikutnya untuk rute itu tampil di beranda.">
       <form onSubmit={submit} className="space-y-4" noValidate>
         {error && !error.isValidation && <Alert>{error.message}</Alert>}
         <TextField label="Nama" autoComplete="name" required value={form.name} error={error?.field("name")} onChange={set("name")} />
@@ -143,7 +148,8 @@ export function RegisterForm() {
           value={form.password_confirmation}
           onChange={set("password_confirmation")}
         />
-        <Button type="submit" size="lg" className="w-full" loading={submitting}>
+
+        <Button type="submit" size="lg" className="w-full" loading={submitting} disabled={!hydrated}>
           Buat akun
         </Button>
       </form>
@@ -159,10 +165,10 @@ export function RegisterForm() {
 
 export function AuthCard({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
   return (
-    <div className="mx-auto w-full max-w-md">
-      <Card className="p-6 sm:p-8">
-        <h1 className="text-2xl font-bold tracking-tight text-ink">{title}</h1>
-        {subtitle && <p className="mt-1 text-sm text-muted">{subtitle}</p>}
+    <div className="mx-auto w-full max-w-md sm:pt-4">
+      <Card className="p-5 sm:p-8">
+        <h1 className="text-xl font-bold tracking-tight text-ink sm:text-2xl">{title}</h1>
+        {subtitle && <p className="mt-1 text-[13px] leading-relaxed text-muted sm:text-sm">{subtitle}</p>}
         <div className="mt-6">{children}</div>
       </Card>
     </div>

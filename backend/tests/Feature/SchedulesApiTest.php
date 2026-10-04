@@ -19,7 +19,7 @@ class SchedulesApiTest extends TestCase
 {
     use RefreshDatabase;
 
-    private const URL = 'https://schedules.example.test/api/krl/schedules?stationid=THB&timefrom=00%3A00&timeto=23%3A00';
+    private const URL = 'https://schedules.example.test/api/krl/schedules?stationid=THB&timefrom=00%3A00&timeto=23%3A59';
 
     /** Shape of the real https://www.kci.id/api/krl/schedules response. */
     private const PAYLOAD = ['status' => 200, 'data' => [
@@ -86,6 +86,23 @@ class SchedulesApiTest extends TestCase
             ->assertJsonPath('data.4.line.color', '#16812B');
     }
 
+    public function test_sync_replaces_all_older_schedules(): void
+    {
+        Setting::put(Setting::SCHEDULES_API_URL, self::URL);
+        Http::fake(['schedules.example.test/*' => Http::response(self::PAYLOAD)]);
+
+        $this->travelTo(now()->subDay()->subHour());
+        $this->sync(['THB']);
+        $this->sync(['SUD']);
+        $this->assertSame(10, Schedule::count());
+
+        $this->travelBack();
+        $this->sync(['THB']);
+
+        $this->assertSame(5, Schedule::count(), 'rows from earlier runs and other dates are gone');
+        $this->assertSame([now()->toDateString()], Schedule::distinct()->pluck('service_date')->map->toDateString()->all());
+    }
+
     public function test_each_station_gets_its_own_request(): void
     {
         Setting::put(Setting::SCHEDULES_API_URL, self::URL);
@@ -93,7 +110,7 @@ class SchedulesApiTest extends TestCase
 
         $this->sync(['THB', 'SUD']);
 
-        Http::assertSent(fn ($r) => str_contains($r->url(), 'stationid=THB&timefrom=00%3A00&timeto=23%3A00'));
+        Http::assertSent(fn ($r) => str_contains($r->url(), 'stationid=THB&timefrom=00%3A00&timeto=23%3A59'));
         Http::assertSent(fn ($r) => str_contains($r->url(), 'stationid=SUD&'));
         Http::assertSentCount(2);
     }
@@ -155,7 +172,7 @@ class SchedulesApiTest extends TestCase
             ->assertJsonPath('data.count', 5)
             ->assertJsonPath('data.first', '00:01')
             ->assertJsonPath('data.last', '21:30')
-            ->assertJsonPath('data.url', 'https://schedules.example.test/api/krl/schedules?stationid=SUD&timefrom=00%3A00&timeto=23%3A00')
+            ->assertJsonPath('data.url', 'https://schedules.example.test/api/krl/schedules?stationid=SUD&timefrom=00%3A00&timeto=23%3A59')
             ->assertJsonPath('data.lines', ['COMMUTER LINE CIKARANG', 'COMMUTER LINE RANGKASBITUNG']);
 
         $this->assertSame(0, Schedule::count());

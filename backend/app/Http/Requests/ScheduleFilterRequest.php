@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Models\Schedule;
 use Illuminate\Foundation\Http\FormRequest;
 
 class ScheduleFilterRequest extends FormRequest
@@ -9,7 +10,6 @@ class ScheduleFilterRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'date' => ['sometimes', 'date_format:Y-m-d'],
             'station' => ['sometimes', 'string', 'max:10'],
             // Destination station (code or slug): trains that stop there later.
             'to' => ['sometimes', 'string', 'max:120', 'alpha_dash'],
@@ -22,9 +22,12 @@ class ScheduleFilterRequest extends FormRequest
         ];
     }
 
+    /**
+     * Public schedules always show the latest synced timetable; a ?date= is ignored.
+     */
     public function serviceDate(): string
     {
-        return $this->validated('date') ?? now()->toDateString();
+        return Schedule::query()->max('service_date') ?? now()->toDateString();
     }
 
     /**

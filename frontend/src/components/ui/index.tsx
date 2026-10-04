@@ -15,8 +15,8 @@ export { cx };
 type Variant = "primary" | "secondary" | "ghost" | "danger";
 
 const VARIANTS: Record<Variant, string> = {
-  primary: "bg-brand-600 text-white hover:bg-brand-700 disabled:bg-brand-600/50",
-  secondary: "border border-line bg-white text-ink hover:bg-slate-50 disabled:text-muted",
+  primary: "bg-brand-600 text-white shadow-sm shadow-brand-600/20 hover:bg-brand-700 disabled:bg-brand-600/50 disabled:shadow-none",
+  secondary: "border border-line bg-white text-ink shadow-sm hover:border-slate-300 hover:bg-slate-50 disabled:text-muted",
   ghost: "text-ink hover:bg-slate-100 disabled:text-muted",
   danger: "border border-red-200 bg-white text-red-700 hover:bg-red-50",
 };
@@ -28,14 +28,14 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 export function Button({ variant = "primary", size = "md", loading, disabled, className, children, ...props }: ButtonProps) {
-  const sizes = { sm: "h-8 px-3 text-sm", md: "h-10 px-4 text-sm", lg: "h-12 px-5 text-base" };
+  const sizes = { sm: "h-9 px-3 text-[13px] sm:h-8", md: "h-10 px-4 text-sm", lg: "h-11 px-5 text-[15px] sm:h-12" };
   return (
     <button
       {...props}
       disabled={disabled || loading}
       aria-busy={loading || undefined}
       className={cx(
-        "inline-flex items-center justify-center gap-2 rounded-lg font-semibold transition-colors disabled:cursor-not-allowed",
+        "inline-flex select-none items-center justify-center gap-2 rounded-xl font-semibold transition active:scale-[0.98] disabled:cursor-not-allowed disabled:active:scale-100",
         VARIANTS[variant],
         sizes[size],
         className,
@@ -58,8 +58,14 @@ export function Spinner({ className = "h-5 w-5" }: { className?: string }) {
 
 // --- Form fields -------------------------------------------------------------
 
-const controlClass =
-  "block w-full rounded-lg border bg-white px-3 text-ink shadow-sm transition-colors placeholder:text-slate-400 focus:border-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-600/20 disabled:bg-slate-50";
+// 16px text on phones prevents iOS from zooming into focused fields; 14px from `sm` up.
+export const controlClass =
+  "block w-full rounded-xl border bg-white px-3.5 text-base text-ink shadow-sm transition-colors placeholder:text-slate-400 hover:border-slate-300 focus:border-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-600/10 disabled:bg-slate-50 disabled:text-muted sm:text-sm";
+
+/** Native select with a custom chevron (see `.select-chevron` in globals.css). */
+export const selectClass = "select-chevron appearance-none pr-10";
+
+const labelClass = "mb-1.5 block text-[13px] font-semibold text-slate-700";
 
 interface FieldProps {
   label: string;
@@ -71,7 +77,7 @@ export function TextField({ label, error, hint, className, ...props }: FieldProp
   const id = useId();
   return (
     <div className={className}>
-      <label htmlFor={id} className="mb-1.5 block text-sm font-medium text-ink">
+      <label htmlFor={id} className={labelClass}>
         {label}
       </label>
       <input
@@ -82,11 +88,11 @@ export function TextField({ label, error, hint, className, ...props }: FieldProp
         className={cx(controlClass, "h-11", error ? "border-red-400" : "border-line")}
       />
       {error ? (
-        <p id={`${id}-error`} className="mt-1.5 text-sm text-red-600">
+        <p id={`${id}-error`} className="mt-1.5 text-xs font-medium text-red-600">
           {error}
         </p>
       ) : hint ? (
-        <p id={`${id}-hint`} className="mt-1.5 text-sm text-muted">
+        <p id={`${id}-hint`} className="mt-1.5 text-xs text-muted">
           {hint}
         </p>
       ) : null}
@@ -104,18 +110,18 @@ export function SelectField({
   const id = useId();
   return (
     <div className={className}>
-      <label htmlFor={id} className="mb-1.5 block text-sm font-medium text-ink">
+      <label htmlFor={id} className={labelClass}>
         {label}
       </label>
       <select
         id={id}
         {...props}
         aria-invalid={!!error || undefined}
-        className={cx(controlClass, "h-11 pr-8", error ? "border-red-400" : "border-line")}
+        className={cx(controlClass, selectClass, "h-11", error ? "border-red-400" : "border-line")}
       >
         {children}
       </select>
-      {error && <p className="mt-1.5 text-sm text-red-600">{error}</p>}
+      {error && <p className="mt-1.5 text-xs font-medium text-red-600">{error}</p>}
     </div>
   );
 }
@@ -123,7 +129,7 @@ export function SelectField({
 // --- Layout & feedback ------------------------------------------------------
 
 export function Card({ className, children }: { className?: string; children: ReactNode }) {
-  return <div className={cx("rounded-2xl border border-line bg-surface shadow-sm", className)}>{children}</div>;
+  return <div className={cx("rounded-2xl border border-line/80 bg-surface shadow-card", className)}>{children}</div>;
 }
 
 export function Skeleton({ className }: { className?: string }) {
@@ -143,11 +149,11 @@ export function TableSkeleton({ rows = 6 }: { rows?: number }) {
 
 export function EmptyState({ title, description, action }: { title: string; description?: string; action?: ReactNode }) {
   return (
-    <div className="flex flex-col items-center px-6 py-12 text-center">
-      <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-2xl" aria-hidden="true">
+    <div className="flex flex-col items-center px-6 py-10 text-center sm:py-12">
+      <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-slate-100 text-xl" aria-hidden="true">
         🚆
       </div>
-      <p className="font-semibold text-ink">{title}</p>
+      <p className="text-[15px] font-semibold text-ink">{title}</p>
       {description && <p className="mt-1 max-w-md text-sm text-muted">{description}</p>}
       {action && <div className="mt-4">{action}</div>}
     </div>
@@ -157,10 +163,10 @@ export function EmptyState({ title, description, action }: { title: string; desc
 export function ErrorState({ message, onRetry }: { message: string; onRetry?: () => void }) {
   return (
     <div role="alert" className="flex flex-col items-center px-6 py-10 text-center">
-      <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-red-50 text-xl text-red-600" aria-hidden="true">
+      <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-red-50 text-lg font-bold text-red-600" aria-hidden="true">
         !
       </div>
-      <p className="font-semibold text-ink">Gagal memuat data</p>
+      <p className="text-[15px] font-semibold text-ink">Gagal memuat data</p>
       <p className="mt-1 max-w-md text-sm text-muted">{message}</p>
       {onRetry && (
         <Button variant="secondary" size="sm" className="mt-4" onClick={onRetry}>
@@ -176,7 +182,7 @@ export function Alert({ children, tone = "error" }: { children: ReactNode; tone?
     <div
       role={tone === "error" ? "alert" : "status"}
       className={cx(
-        "rounded-lg border px-4 py-3 text-sm",
+        "rounded-xl border px-4 py-3 text-sm",
         tone === "error" ? "border-red-200 bg-red-50 text-red-800" : "border-sky-200 bg-sky-50 text-sky-900",
       )}
     >
@@ -206,9 +212,9 @@ export function LineDot({ color }: { color: string | null | undefined }) {
 
 export function PageHeader({ title, description, actions }: { title: string; description?: ReactNode; actions?: ReactNode }) {
   return (
-    <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+    <div className="mb-5 flex flex-col gap-3 sm:mb-6 sm:flex-row sm:items-end sm:justify-between">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight text-ink">{title}</h1>
+        <h1 className="text-xl font-bold tracking-tight text-ink sm:text-2xl">{title}</h1>
         {description && <p className="mt-1 text-sm text-muted">{description}</p>}
       </div>
       {actions}
@@ -231,8 +237,8 @@ export function Pagination({
 }) {
   if (lastPage <= 1) return <p className="px-4 py-3 text-sm text-muted">{total} data</p>;
   return (
-    <nav className="flex items-center justify-between gap-3 border-t border-line px-4 py-3" aria-label="Paginasi">
-      <p className="text-sm text-muted">
+    <nav className="flex flex-wrap items-center justify-between gap-3 border-t border-line px-4 py-3" aria-label="Paginasi">
+      <p className="text-xs text-muted sm:text-sm">
         Halaman {page} dari {lastPage} · {total} data
       </p>
       <div className="flex gap-2">

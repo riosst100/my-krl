@@ -24,8 +24,9 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
 
     // --- Signed-in user ----------------------------------------------------
     Route::middleware('auth:sanctum')->prefix('me')->name('me.')->group(function () {
-        Route::get('favorite-stations', [V1\FavoriteStationController::class, 'index'])->name('favorite-stations.index');
-        Route::put('favorite-stations', [V1\FavoriteStationController::class, 'update'])->name('favorite-stations.update');
+        Route::get('favorite-routes', [V1\FavoriteRouteController::class, 'index'])->name('favorite-routes.index');
+        Route::put('favorite-routes', [V1\FavoriteRouteController::class, 'update'])->name('favorite-routes.update');
+        Route::get('favorite-routes/departures', [V1\FavoriteRouteController::class, 'departures'])->name('favorite-routes.departures');
     });
 
     // --- Public data -------------------------------------------------------
@@ -36,6 +37,7 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
     Route::get('schedules', [V1\ScheduleController::class, 'index'])->name('schedules.index');
     Route::get('schedules/dates', [V1\ScheduleController::class, 'dates'])->name('schedules.dates');
     Route::get('schedules/next', [V1\ScheduleController::class, 'next'])->name('schedules.next');
+    Route::get('schedules/upcoming', [V1\ScheduleController::class, 'upcoming'])->name('schedules.upcoming');
 
     // --- Admin (separate "admin" session guard) ----------------------------
     Route::prefix('admin')->name('admin.')->group(function () {
@@ -72,6 +74,7 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
 
             Route::get('sync-logs', [Admin\SyncController::class, 'index'])->name('sync.index');
             Route::get('sync-logs/{syncLog}', [Admin\SyncController::class, 'show'])->name('sync.show');
+            Route::get('kci-watch', [Admin\SyncController::class, 'watch'])->name('kci-watch');
             Route::post('sync', [Admin\SyncController::class, 'store'])->middleware('throttle:admin-sync')->name('sync.store');
         });
     });

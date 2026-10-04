@@ -18,6 +18,8 @@ class RegisterRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
-        $this->merge(['email' => strtolower(trim((string) $this->input('email')))]);
+        $this->merge([
+            'email' => strtolower(trim((string) $this->input('email'))),
+        ]);
     }
 }

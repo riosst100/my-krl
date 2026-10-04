@@ -125,6 +125,8 @@ export interface SyncLogsMeta {
   last_schedule_sync: SyncLog | null;
   last_successful_schedule_sync: SyncLog | null;
   next_schedule_sync: string;
+  /** Which service day the scheduled run stores (1 = tomorrow). */
+  schedule_sync_day_offset: number;
 }
 
 export function getSyncLogs(page = 1, type: "" | "schedules" | "stations" = "") {
@@ -204,7 +206,8 @@ export async function testSchedulesApiUrl(url: string, station?: string): Promis
   ).data;
 }
 
-export async function triggerSync(): Promise<SyncLog> {
-  const res = await apiFetch<{ data: SyncLog }>("/admin/sync", { method: "POST" });
+/** Queue a schedule sync for today (0) or tomorrow (1). */
+export async function triggerSync(dayOffset: 0 | 1 = 0): Promise<SyncLog> {
+  const res = await apiFetch<{ data: SyncLog }>("/admin/sync", { method: "POST", body: { day_offset: dayOffset } });
   return res.data;
 }

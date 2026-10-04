@@ -9,11 +9,14 @@ const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? "Admin12345";
 const SHOTS = process.env.E2E_SCREENSHOTS ?? "/tmp/e2e";
 // Station that has synced schedules (KCI_SYNC_STATIONS), e.g. THB = Tanah Abang.
 const STATION = (process.env.E2E_STATION ?? "THB").toUpperCase();
+const FAVORITE_2 = (process.env.E2E_FAVORITE_2 ?? "SUD").toUpperCase();
 fs.mkdirSync(SHOTS, { recursive: true });
 
 const email = `e2e${Date.now()}@test.id`;
 const password = "Rahasia123";
 const step = (msg) => console.log(`✓ ${msg}`);
+// Forms keep their submit button disabled until hydrated; typing earlier would be lost.
+const formReady = (page, button) => page.getByRole("button", { name: button, exact: true, disabled: false }).waitFor();
 
 // Local CAs (e.g. Caddy `tls internal`) are not trusted inside the test container.
 const IGNORE_HTTPS = process.env.E2E_IGNORE_HTTPS_ERRORS === "1";
@@ -29,17 +32,86 @@ try {
     page.on("response", (r) => {
       if (r.url().includes("/auth/") || r.url().includes("csrf-cookie")) console.log(`  ${r.request().method()} ${r.url()} -> ${r.status()}`);
     });
+    page.on("framenavigated", (f) => f === page.mainFrame() && console.log(`  NAV ${f.url()}`));
+    page.on("console", (m) => /reload|hmr|fast refresh|error|websocket/i.test(m.text()) && console.log(`  CONSOLE ${m.type()}: ${m.text().slice(0, 200)}`));
   }
 
+  await page.goto(`${BASE}/`);
+  const upcoming = page.locator("section", { has: page.getByRole("heading", { name: /^Kereta terdekat/ }) });
+  // After the last train of the day the list is empty and says so.
+  const noMoreTrains = upcoming.getByText(/^Tidak ada lagi kereta hari ini/);
+  const upcomingReady = () => upcoming.locator("ol li").first().or(noMoreTrains).waitFor();
+  await upcomingReady();
+  const firstUpcoming = (await noMoreTrains.count())
+    ? "no more trains today"
+    : (await upcoming.locator("ol li").first().innerText()).replace(/\s+/g, " ").trim();
+  await upcoming.getByRole("link", { name: "Daftar" }).waitFor();
+  if (await page.getByRole("dialog").isVisible()) throw new Error("guests must not get a favourites dialog");
+  await page.screenshot({ path: `${SHOTS}/home-guest.png` });
+  step(`guest homepage shows the soonest departures ("${firstUpcoming}") and a sign-up invitation`);
+
+  // Departure station picker is the first thing in the section, and is searchable.
+  const fromBox = page.getByRole("combobox", { name: "Stasiun keberangkatan" });
+  const boxTop = (await fromBox.boundingBox()).y;
+  const titleTop = (await page.getByRole("heading", { name: /^Kereta terdekat/ }).boundingBox()).y;
+  if (boxTop > titleTop) throw new Error("departure station picker should be above the 'Kereta terdekat' title");
+
+  // Search by typing part of the code, pick with the mouse.
+  await fromBox.click();
+  await fromBox.fill(STATION.toLowerCase());
+  const listbox = page.getByRole("listbox", { name: "Stasiun keberangkatan" });
+  const optionCount = await listbox.getByRole("option").count();
+  await listbox.getByRole("option").filter({ hasText: STATION }).first().click();
+  await page.waitForURL(new RegExp(`\\?dari=${STATION}$`));
+  await page.getByRole("heading", { name: /^Kereta terdekat dari / }).waitFor();
+  await upcomingReady();
+  const fromRows = await upcoming.locator("ol li").count();
+  await page.reload();
+  if (!(await fromBox.inputValue()).includes(`(${STATION})`)) throw new Error("departure station not kept after reload");
+
+  // Search by name with the keyboard: type, Enter picks the best match.
+  await fromBox.click();
+  await fromBox.fill("sudir");
+  await page.keyboard.press("Enter");
+  await page.waitForURL(new RegExp(`\\?dari=${FAVORITE_2}$`));
+  await upcoming.getByText(/^Belum ada jadwal dari /).or(upcoming.locator("ol li").first()).or(noMoreTrains).waitFor();
+  const secondState = (await upcoming.getByText(/^Belum ada jadwal dari /).count()) > 0 ? "no schedules yet" : "has schedules";
+
+  // Unknown text: no options; clear button returns to all stations.
+  await fromBox.click();
+  await fromBox.fill("zzzz");
+  await listbox.getByText("Stasiun tidak ditemukan").waitFor();
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Hapus pilihan stasiun" }).click();
+  await page.waitForURL(`${BASE}/`);
+  step(`guest searches departure station: "${STATION.toLowerCase()}" → ${optionCount} option(s), ${fromRows} trains (kept after reload); "sudir"+Enter → ${FAVORITE_2} (${secondState}); cleared`);
+
   await page.goto(`${BASE}/register`);
+  await formReady(page, "Buat akun");
   await page.getByLabel("Nama").fill("E2E User");
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Kata sandi", { exact: true }).fill(password);
   await page.getByLabel("Ulangi kata sandi").fill(password);
   await page.getByRole("button", { name: "Buat akun" }).click();
-  await page.waitForURL("**/account");
+  await page.waitForURL(`${BASE}/`);
+  // Right after signing up a mandatory dialog asks for the first favourite route.
+  const routeDialog = page.getByRole("dialog", { name: "Pilih rute favorit" });
+  await routeDialog.waitFor();
+  await page.keyboard.press("Escape");
+  if (!(await routeDialog.isVisible())) throw new Error("route dialog must not close with Esc while no route is chosen");
+  await routeDialog.getByRole("button", { name: "Simpan rute favorit" }).click();
+  await routeDialog.getByText("Pilih stasiun asal dan tujuan untuk setiap rute.").waitFor(); // a route is required
+  await routeDialog.getByLabel("Dari stasiun").selectOption(STATION);
+  await routeDialog.getByLabel("Ke stasiun").selectOption(FAVORITE_2);
+  await routeDialog.getByRole("button", { name: "+ Tambah rute (1/4)" }).click();
+  await routeDialog.getByRole("button", { name: "Hapus rute 2" }).click();
+  await routeDialog.getByRole("button", { name: "Simpan rute favorit" }).click();
+  await routeDialog.waitFor({ state: "hidden" });
+  step(`register → dialog → favourite route ${STATION} → ${FAVORITE_2}`);
+
+  await page.goto(`${BASE}/account`);
   await page.getByText(email).first().waitFor();
-  step("register → /account");
+  step("account page");
 
   // Logout, then login again
   await page.getByRole("button", { name: "Keluar" }).click();
@@ -48,6 +120,7 @@ try {
   step("logout");
 
   await page.goto(`${BASE}/login`);
+  await formReady(page, "Masuk");
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Kata sandi").fill("wrong-password1");
   await page.getByRole("button", { name: "Masuk" }).click();
@@ -57,8 +130,10 @@ try {
 
   await page.getByLabel("Kata sandi").fill(password);
   await page.getByRole("button", { name: "Masuk" }).click();
-  await page.waitForURL("**/account");
-  step("login");
+  await page.waitForURL(`${BASE}/`);
+  step("login → homepage");
+
+  await page.goto(`${BASE}/account`);
 
   await page.reload();
   await page.getByText(email).first().waitFor();
@@ -75,9 +150,27 @@ try {
   await page.getByRole("link", { name: "Akun" }).waitFor();
   step(`still logged in after browser restart (kept cookies: ${persistent.map((c) => c.name.split("_")[0]).join(", ")})`);
 
-  // --- Schedule search --------------------------------------------------------
+  // --- Favourite routes on the homepage (signed in) ---------------------------
   await page.goto(`${BASE}/`);
-  await page.getByLabel("Stasiun").selectOption(STATION);
+  const favSection = page.locator("section", { has: page.getByRole("heading", { name: "Rute Favorit" }) });
+  await favSection.getByRole("heading", { level: 3 }).first().waitFor();
+  const favCards = await favSection.getByRole("heading", { level: 3 }).allInnerTexts();
+  if (favCards.length !== 1) throw new Error(`expected 1 favourite route card, got ${favCards.length}`);
+  if (await page.getByRole("dialog").isVisible()) throw new Error("no dialog expected for a user with a favourite route");
+  const nextTrains = await favSection.locator("ol li").count();
+  await page.screenshot({ path: `${SHOTS}/home-favorites.png` });
+  step(`homepage shows favourite route (${favCards.join(" + ")}), ${nextTrains} upcoming departures`);
+
+  // Change the routes later via the (optional) dialog.
+  await favSection.getByRole("button", { name: "Ubah rute" }).click();
+  const dialog = page.getByRole("dialog", { name: "Rute favorit" });
+  await dialog.waitFor();
+  await page.keyboard.press("Escape");
+  await dialog.waitFor({ state: "hidden" });
+  step("favourite routes dialog is optional once a route exists (Esc closes it)");
+
+  // --- Schedule search --------------------------------------------------------
+  await page.getByLabel("Stasiun", { exact: true }).selectOption(STATION);
   await page.getByRole("button", { name: "Cari Jadwal" }).click();
   await page.waitForURL(`**/schedule?station=${STATION}*`);
   await page.getByRole("heading", { level: 2, name: /^Stasiun / }).waitFor();
@@ -105,9 +198,10 @@ try {
   await toSelect.selectOption(toCode);
   await page.waitForURL(new RegExp(`to=${toCode}`));
   await page.getByRole("heading", { name: /→/ }).waitFor();
-  await page.getByRole("columnheader", { name: /^Tiba di / }).waitFor();
+  // Show the whole day first (late at night every train has already left).
   const hideTrip = page.getByLabel("Sembunyikan yang sudah berangkat");
   if (await hideTrip.isVisible()) await hideTrip.uncheck();
+  await page.getByRole("columnheader", { name: /^Tiba di / }).waitFor();
   const tripRows = await page.locator("table tbody tr").count();
   if (tripRows < 1) throw new Error(`no trains to ${toCode}`);
   await page.screenshot({ path: `${SHOTS}/station-to.png` });
@@ -118,6 +212,9 @@ try {
   const m = await mobile.newPage();
   await m.goto(`${BASE}/stations/${STATION}`);
   await m.getByRole("heading", { level: 1, name: /^Stasiun / }).waitFor();
+  const hideMobile = m.getByLabel("Sembunyikan yang sudah berangkat");
+  await hideMobile.or(m.locator("ul li").first()).first().waitFor();
+  if (await hideMobile.isVisible()) await hideMobile.uncheck(); // late at night every train has left
   await m.locator("ul li").first().waitFor();
   await m.screenshot({ path: `${SHOTS}/station-mobile.png` });
   await mobile.close();
@@ -126,6 +223,7 @@ try {
   // --- Normal user cannot use admin -----------------------------------------
   await page.goto(`${BASE}/admin/dashboard`);
   await page.waitForURL("**/admin/login**");
+  await formReady(page, "Masuk");
   step("normal user redirected to /admin/login");
 
   await page.getByLabel("Email").fill(email);
@@ -229,6 +327,13 @@ try {
   step("website session unaffected by admin login");
 
   console.log("\nE2E OK");
+} catch (error) {
+  // Screenshot every open page to see what the user would have seen.
+  let n = 0;
+  for (const context of browser.contexts()) {
+    for (const p of context.pages()) await p.screenshot({ path: `${SHOTS}/failure-${++n}.png`, fullPage: true }).catch(() => {});
+  }
+  throw error;
 } finally {
   await browser.close();
 }

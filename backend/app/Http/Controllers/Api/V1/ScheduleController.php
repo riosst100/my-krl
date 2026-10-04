@@ -90,6 +90,33 @@ class ScheduleController extends Controller
     }
 
     /**
+     * GET /schedules/upcoming?limit=5[&station=THB] — the soonest departures,
+     * across all stations or from one departure station.
+     */
+    public function upcoming(Request $request): AnonymousResourceCollection
+    {
+        $validated = $request->validate([
+            'limit' => ['sometimes', 'integer', 'min:1', 'max:20'],
+            'station' => ['sometimes', 'nullable', 'string', 'max:120', 'alpha_dash'],
+        ]);
+
+        $station = null;
+        if (! empty($validated['station'])) {
+            $station = (new Station)->resolveRouteBinding($validated['station']);
+            abort_if($station === null, 422, 'The selected station is invalid.');
+        }
+
+        return ScheduleResource::collection($this->search->upcoming((int) ($validated['limit'] ?? 5), $station))->additional([
+            'meta' => [
+                'now' => now()->toIso8601String(),
+                'station' => $station ? ['code' => $station->code, 'name' => $station->name, 'slug' => $station->slug] : null,
+                'has_schedules_today' => $this->search->hasSchedulesToday($station),
+                'last_synced_at' => $this->search->lastSyncedAt(),
+            ],
+        ]);
+    }
+
+    /**
      * GET /schedules/dates — service dates currently available in the database.
      */
     public function dates(): JsonResponse

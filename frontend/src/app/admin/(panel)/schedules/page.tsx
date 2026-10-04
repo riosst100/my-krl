@@ -1,22 +1,20 @@
 "use client";
 
 import { use, useEffect, useState } from "react";
+import { ScheduleSyncStatus } from "@/components/admin/ScheduleSyncStatus";
 import { Card, EmptyState, ErrorState, LineDot, PageHeader, Pagination, SelectField, TableSkeleton, TextField } from "@/components/ui";
 import { getAdminSchedules, getAdminStations } from "@/lib/api/admin";
 import { errorMessage } from "@/lib/api/client";
 import type { Station } from "@/lib/api/types";
-import { isValidDate, lineLabel, todayInJakarta } from "@/lib/format";
+import { lineLabel } from "@/lib/format";
 import { useApi } from "@/lib/hooks/useApi";
 import { useDebounced } from "@/lib/hooks/useDebounced";
 
 export default function AdminSchedulesPage({ searchParams }: PageProps<"/admin/schedules">) {
-  // Deep links from the station detail page: /admin/schedules?station=THB&date=2026-10-03
+  // Deep links from the station detail page: /admin/schedules?station=THB
   const initial = use(searchParams);
   const [stations, setStations] = useState<Station[]>([]);
   const [station, setStation] = useState(typeof initial.station === "string" ? initial.station.toUpperCase() : "");
-  const [date, setDate] = useState(() =>
-    typeof initial.date === "string" && isValidDate(initial.date) ? initial.date : todayInJakarta(),
-  );
   const [trainNumber, setTrainNumber] = useState("");
   const [page, setPage] = useState(1);
   const train = useDebounced(trainNumber.replace(/[^A-Za-z0-9]/g, ""));
@@ -27,8 +25,8 @@ export default function AdminSchedulesPage({ searchParams }: PageProps<"/admin/s
       .catch(() => setStations([]));
   }, []);
 
-  const { data, error, loading, reload } = useApi(date ? `schedules|${station}|${date}|${train}|${page}` : null, () =>
-    getAdminSchedules({ station, date, train_number: train, page, per_page: 50 }),
+  const { data, error, loading, reload } = useApi(`schedules|${station}|${train}|${page}`, () =>
+    getAdminSchedules({ station, train_number: train, page, per_page: 50 }),
   );
 
   const resetPage = () => setPage(1);
@@ -36,6 +34,8 @@ export default function AdminSchedulesPage({ searchParams }: PageProps<"/admin/s
   return (
     <>
       <PageHeader title="Jadwal" description="Data jadwal hasil sinkronisasi yang tersimpan di database." />
+
+      <ScheduleSyncStatus onSynced={reload} />
 
       <div className="mb-4 grid gap-4 sm:grid-cols-3">
         <SelectField
@@ -53,15 +53,6 @@ export default function AdminSchedulesPage({ searchParams }: PageProps<"/admin/s
             </option>
           ))}
         </SelectField>
-        <TextField
-          label="Tanggal"
-          type="date"
-          value={date}
-          onChange={(e) => {
-            setDate(e.target.value);
-            resetPage();
-          }}
-        />
         <TextField
           label="Nomor kereta"
           type="search"

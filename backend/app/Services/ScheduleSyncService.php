@@ -136,15 +136,17 @@ class ScheduleSyncService
      * Queues a sync requested from the admin panel. Returns null when a sync
      * is already queued or running.
      */
-    public function queueManualSync(User $admin): ?SyncLog
+    public function queueManualSync(User $admin, ?CarbonInterface $serviceDate = null): ?SyncLog
     {
-        return Cache::lock(self::LOCK.':queue', 10)->block(5, function () use ($admin) {
+        return Cache::lock(self::LOCK.':queue', 10)->block(5, function () use ($admin, $serviceDate) {
             if (SyncLog::inProgress(SyncLog::TYPE_KCI_SCHEDULES)->exists()) {
                 return null;
             }
 
             $log = $this->createLog('manual', $admin->id);
-            SyncKciSchedulesJob::dispatch($log->id);
+            $date = ($serviceDate ?? now())->toDateString();
+            $log->update(['meta' => [...($log->meta ?? []), 'from' => $date]]);
+            SyncKciSchedulesJob::dispatch($log->id, $date);
 
             return $log;
         });
@@ -172,9 +174,10 @@ class ScheduleSyncService
             $stationCodes ?? config('kci.sync_stations'),
         )));
 
+        $startedAt = now();
         $log->update([
             'status' => SyncStatus::Running,
-            'started_at' => now(),
+            'started_at' => $startedAt,
             'meta' => [...($log->meta ?? []), 'from' => $from->toDateString(), 'days' => $days, 'stations' => $only ?: 'all'],
         ]);
 
@@ -189,9 +192,19 @@ class ScheduleSyncService
             // Stops per train (for "to station" search). Only for real KCI train numbers.
             $stops = $url !== '' ? $this->trainStops->sync($this->syncedTrainNumbers($from, $only), $from) : null;
 
-            $cutoff = now()->subDays(config('kci.retention_days'))->toDateString();
-            $pruned = Schedule::where('service_date', '<', $cutoff)->delete();
-            TrainStop::where('service_date', '<', $cutoff)->delete();
+            if ($url !== '') {
+                // The Schedules API only ever returns the current timetable: everything this
+                // run did not write is stale, so the tables end up fresh (a truncate that
+                // only happens once the new data is in).
+                $pruned = $stations > 0 ? Schedule::where('updated_at', '<', $startedAt)->delete() : 0;
+                if ($stations > 0) {
+                    TrainStop::where('service_date', '!=', $from->toDateString())->delete();
+                }
+            } else {
+                $cutoff = now()->subDays(config('kci.retention_days'))->toDateString();
+                $pruned = Schedule::where('service_date', '<', $cutoff)->delete();
+                TrainStop::where('service_date', '<', $cutoff)->delete();
+            }
 
             $log->fill([
                 'records_processed' => $records,

@@ -81,7 +81,7 @@ services:
       # Browser -> Laravel
       NEXT_PUBLIC_API_URL: ${API_URL:-http://localhost:${BACKEND_PORT:-8000}}
       # Hostnames allowed to load dev resources (HMR) through the reverse proxy
-      ALLOWED_DEV_ORIGINS: ${APP_DOMAIN:-}
+      ALLOWED_DEV_ORIGINS: ${ALLOWED_DEV_ORIGINS:-${APP_DOMAIN:-}}
       # Next.js server (inside Docker network) -> Laravel
       API_INTERNAL_URL: http://backend:8000
     ports:

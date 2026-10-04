@@ -118,5 +118,13 @@ class AdminTest extends TestCase
         $log = SyncLog::latest('id')->first();
         $this->assertSame('success', $log->status->value);
         $this->assertSame($admin->id, $log->triggered_by);
+        $this->assertSame(now()->toDateString(), $log->meta['from']);
+
+        // Manual sync for tomorrow.
+        $this->fromFrontend()->postJson('/api/v1/admin/sync', ['day_offset' => 1])->assertAccepted();
+        $this->assertSame(now()->addDay()->toDateString(), SyncLog::latest('id')->first()->meta['from']);
+        $this->assertTrue(\App\Models\Schedule::whereDate('service_date', now()->addDay()->toDateString())->exists());
+
+        $this->fromFrontend()->postJson('/api/v1/admin/sync', ['day_offset' => 5])->assertUnprocessable();
     }
 }

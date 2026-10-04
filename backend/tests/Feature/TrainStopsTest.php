@@ -19,7 +19,7 @@ class TrainStopsTest extends TestCase
 {
     use RefreshDatabase;
 
-    private const SCHEDULES_URL = 'https://kci.example.test/api/krl/schedules?stationid=THB&timefrom=00%3A00&timeto=23%3A00';
+    private const SCHEDULES_URL = 'https://kci.example.test/api/krl/schedules?stationid=THB&timefrom=00%3A00&timeto=23%3A59';
 
     private const STOPS_URL = 'https://kci.example.test/api/krl/train-schedule?trainid=5701C';
 

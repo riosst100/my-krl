@@ -40,9 +40,21 @@ class ScheduleApiTest extends TestCase
         }
     }
 
-    public function test_station_schedules_for_a_date_are_sorted_by_departure(): void
+    public function test_station_schedules_use_the_latest_synced_date_and_ignore_date_param(): void
     {
         $this->getJson('/api/v1/stations/BKS/schedules?date=2026-10-03')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('meta.date', '2026-10-04')
+            ->assertJsonPath('data.0.train_number', '5005');
+    }
+
+    public function test_station_schedules_are_sorted_by_departure(): void
+    {
+        Schedule::where('service_date', '2026-10-04')->delete();
+        Schedule::whereIn('train_number', ['5001', '5002', '5003'])->update(['service_date' => '2026-10-04']);
+
+        $this->getJson('/api/v1/stations/BKS/schedules')
             ->assertOk()
             ->assertJsonCount(3, 'data')
             ->assertJsonPath('data.0.train_number', '5001')
@@ -54,12 +66,15 @@ class ScheduleApiTest extends TestCase
 
     public function test_station_can_be_resolved_by_slug(): void
     {
-        $this->getJson('/api/v1/stations/bekasi/schedules?date=2026-10-04')->assertOk()->assertJsonCount(1, 'data');
+        $this->getJson('/api/v1/stations/bekasi/schedules')->assertOk()->assertJsonCount(1, 'data');
     }
 
     public function test_schedules_can_be_filtered_by_direction_and_time(): void
     {
-        $this->getJson('/api/v1/stations/BKS/schedules?date=2026-10-03&direction=bandan&time_from=06:30')
+        Schedule::where('service_date', '2026-10-04')->delete();
+        Schedule::whereIn('train_number', ['5001', '5002', '5003'])->update(['service_date' => '2026-10-04']);
+
+        $this->getJson('/api/v1/stations/BKS/schedules?direction=bandan&time_from=06:30')
             ->assertOk()
             ->assertJsonCount(1, 'data')
             ->assertJsonPath('data.0.train_number', '5003');
@@ -72,14 +87,16 @@ class ScheduleApiTest extends TestCase
 
     public function test_invalid_filters_return_422(): void
     {
-        $this->getJson('/api/v1/stations/BKS/schedules?date=03-10-2026&time_from=6pm')
+        $this->getJson('/api/v1/stations/BKS/schedules?time_from=6pm')
             ->assertUnprocessable()
-            ->assertJsonValidationErrors(['date', 'time_from']);
+            ->assertJsonValidationErrors(['time_from']);
     }
 
     public function test_global_search_by_train_number_is_paginated(): void
     {
-        $this->getJson('/api/v1/schedules?date=2026-10-03&train_number=5003')
+        Schedule::where('train_number', '5003')->update(['service_date' => '2026-10-04']);
+
+        $this->getJson('/api/v1/schedules?train_number=5003')
             ->assertOk()
             ->assertJsonCount(1, 'data')
             ->assertJsonPath('data.0.station.code', 'BKS')

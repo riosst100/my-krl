@@ -1,47 +1,34 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-import { getAvailableDates, getStationDestinations } from "@/lib/api/schedules";
+import { getStationDestinations } from "@/lib/api/schedules";
 import { useApi } from "@/lib/hooks/useApi";
+import { controlClass as baseControlClass, cx, selectClass } from "@/components/ui";
 
 interface Props {
   stationCode: string;
   stationName: string;
-  date: string;
   /** Selected destination station code, if any. */
   to?: string;
   /** Extra query params to keep (e.g. station on /schedule). */
   keep?: Record<string, string>;
-  showDate?: boolean;
 }
 
-const controlClass =
-  "h-11 w-full rounded-lg border border-line bg-white px-3 text-ink shadow-sm focus:border-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-600/20 disabled:bg-slate-50";
+const controlClass = cx(baseControlClass, "h-11 border-line");
+const labelClass = "mb-1.5 block text-[13px] font-semibold text-slate-700";
 
 /**
- * "Ke stasiun" (destination station) + date selection for a station's
- * timetable. Both are kept in the URL (?to=SUD&date=...), so results can be shared.
+ * "Ke stasiun" (destination station) selection for a station's
+ * timetable, kept in the URL (?to=SUD) so results can be shared.
  */
-export function TripPicker({ stationCode, stationName, date, to = "", keep = {}, showDate = true }: Props) {
+export function TripPicker({ stationCode, stationName, to = "", keep = {} }: Props) {
   const router = useRouter();
   const pathname = usePathname();
-  const [range, setRange] = useState<{ min?: string; max?: string }>({});
-  const destinations = useApi(`destinations|${stationCode}|${date}`, (signal) => getStationDestinations(stationCode, date, signal));
+  const destinations = useApi(`destinations|${stationCode}`, (signal) => getStationDestinations(stationCode, signal));
 
-  useEffect(() => {
-    if (!showDate) return;
-    getAvailableDates()
-      .then(({ dates }) => setRange({ min: dates[0], max: dates[dates.length - 1] }))
-      .catch(() => setRange({}));
-  }, [showDate]);
-
-  const navigate = (next: { date?: string; to?: string }) => {
+  const navigate = (next: { to: string }) => {
     const params = new URLSearchParams(keep);
-    const nextDate = next.date ?? date;
-    const nextTo = next.to ?? to;
-    params.set("date", nextDate);
-    if (nextTo) params.set("to", nextTo);
+    if (next.to) params.set("to", next.to);
     router.replace(`${pathname}?${params}`, { scroll: false });
   };
 
@@ -49,14 +36,14 @@ export function TripPicker({ stationCode, stationName, date, to = "", keep = {},
   const noStopData = !destinations.loading && !destinations.error && options.length === 0;
 
   return (
-    <div className={`grid gap-3 ${showDate ? "sm:grid-cols-[minmax(0,1fr)_180px]" : ""}`}>
+    <div className="grid gap-3">
       <div>
-        <label htmlFor="trip-to" className="mb-1.5 block text-sm font-medium text-ink">
+        <label htmlFor="trip-to" className={labelClass}>
           Ke stasiun
         </label>
         <select
           id="trip-to"
-          className={controlClass}
+          className={cx(controlClass, selectClass)}
           value={to}
           disabled={destinations.loading || noStopData}
           onChange={(e) => navigate({ to: e.target.value })}
@@ -73,27 +60,11 @@ export function TripPicker({ stationCode, stationName, date, to = "", keep = {},
           {destinations.error
             ? "Daftar stasiun tujuan tidak dapat dimuat."
             : noStopData
-              ? "Data pemberhentian kereta belum tersedia untuk tanggal ini."
+              ? "Data pemberhentian kereta belum tersedia."
               : `Hanya stasiun yang dilewati kereta setelah ${stationName}.`}
         </p>
       </div>
 
-      {showDate && (
-        <div>
-          <label htmlFor="trip-date" className="mb-1.5 block text-sm font-medium text-ink">
-            Tanggal
-          </label>
-          <input
-            id="trip-date"
-            type="date"
-            className={controlClass}
-            value={date}
-            min={range.min}
-            max={range.max}
-            onChange={(e) => e.target.value && navigate({ date: e.target.value })}
-          />
-        </div>
-      )}
     </div>
   );
 }

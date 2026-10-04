@@ -17,20 +17,44 @@
   --color-line: #e2e8f0;
   --color-surface: #ffffff;
   --color-canvas: #f6f7f9;
+
+  /* Soft, layered elevation for cards. */
+  --shadow-card: 0 1px 2px rgb(15 23 42 / 0.04), 0 1px 3px rgb(15 23 42 / 0.04);
+  --shadow-raised: 0 4px 16px -4px rgb(15 23 42 / 0.1), 0 2px 4px -2px rgb(15 23 42 / 0.05);
 }
 
 :root {
   color-scheme: light;
 }
 
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  scroll-padding-top: 4.5rem;
+}
+
 body {
   background: var(--color-canvas);
   color: var(--color-ink);
+  -webkit-tap-highlight-color: transparent;
 }
 
 /* Tabular figures keep departure times aligned in columns. */
 .tabular {
   font-variant-numeric: tabular-nums;
+}
+
+/* Horizontal chip rows on small screens: scrollable without a visible scrollbar. */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Space for the mobile bottom navigation, including the iPhone home indicator. */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 :focus-visible {
@@ -51,4 +75,12 @@ body {
 
 .animate-toast-in {
   animation: toast-in 160ms ease-out;
+}
+
+/* Consistent chevron for native selects (appearance: none). */
+.select-chevron {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 20 20%27 fill=%27%2364748b%27%3E%3Cpath fill-rule=%27evenodd%27 d=%27M5.23 7.21a.75.75 0 0 1 1.06.02L10 11.17l3.71-3.94a.75.75 0 1 1 1.08 1.04l-4.25 4.5a.75.75 0 0 1-1.08 0l-4.25-4.5a.75.75 0 0 1 .02-1.06Z%27 clip-rule=%27evenodd%27/%3E%3C/svg%3E");
+  background-position: right 0.75rem center;
+  background-repeat: no-repeat;
+  background-size: 1.125rem;
 }

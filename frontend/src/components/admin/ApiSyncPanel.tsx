@@ -168,7 +168,7 @@ export function ApiSyncPanel<P extends ApiPreview>(props: Props<P>) {
                 <p className="mt-1 text-sm text-muted">{sync.summary(sync.last)}</p>
               )}
               {sync.last.error_message && <p className="mt-1 break-all text-sm text-red-700">{sync.last.error_message}</p>}
-              {sync.last.status !== "success" && (
+              {sync.last.status !== "success" && sync.last.status !== "queued" && sync.last.status !== "running" && (
                 <p className="mt-1 text-sm text-muted">
                   Terakhir berhasil: {sync.lastSuccess ? formatDateTimeLong(sync.lastSuccess.finished_at) : "belum pernah"}
                 </p>

@@ -5,6 +5,8 @@ namespace Database\Seeders;
 use App\Enums\SyncStatus;
 use App\Enums\UserRole;
 use App\Models\User;
+use App\Models\Station;
+use App\Services\FavoriteRouteService;
 use App\Services\ScheduleSyncService;
 use App\Services\StationSyncService;
 use Illuminate\Database\Seeder;
@@ -14,16 +16,9 @@ class DatabaseSeeder extends Seeder
     /**
      * Seed the application's database.
      */
-    public function run(StationSyncService $stationSync, ScheduleSyncService $sync): void
+    public function run(StationSyncService $stationSync, ScheduleSyncService $sync, FavoriteRouteService $favorites): void
     {
         $this->seedAdmin();
-
-        if (app()->environment('local')) {
-            User::firstOrCreate(
-                ['email' => 'user@krl.test'],
-                ['name' => 'Demo User', 'password' => 'Password123'],
-            );
-        }
 
         // Stations, then schedules, from the configured KCI source (mock by default).
         $stations = $stationSync->run($stationSync->createLog('console', status: SyncStatus::Running));
@@ -31,6 +26,19 @@ class DatabaseSeeder extends Seeder
 
         $log = $sync->run($sync->createLog('console', status: SyncStatus::Running));
         $this->command?->info("KCI sync: {$log->status->value}, {$log->records_processed} schedules");
+
+        if (app()->environment('local')) {
+            $demo = User::firstOrCreate(
+                ['email' => 'user@krl.test'],
+                ['name' => 'Demo User', 'password' => 'Password123'],
+            );
+
+            // Like a real user: the demo user has one favourite route.
+            $codes = Station::active()->whereIn('code', ['THB', 'SUD'])->pluck('code')->all();
+            if (count($codes) === 2 && $demo->favoriteRoutes()->doesntExist()) {
+                $favorites->replace($demo, [['from' => 'THB', 'to' => 'SUD']]);
+            }
+        }
     }
 
     private function seedAdmin(): void

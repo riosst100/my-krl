@@ -21,7 +21,7 @@ export default function AccountPage() {
 
   if (status !== "authenticated" || !user) {
     return (
-      <Card className="mx-auto max-w-2xl p-6">
+      <Card className="mx-auto max-w-2xl p-5 sm:p-6">
         <Skeleton className="h-7 w-40" />
         <Skeleton className="mt-6 h-5 w-full" />
         <Skeleton className="mt-3 h-5 w-2/3" />
@@ -41,22 +41,22 @@ export default function AccountPage() {
   };
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6">
-      <Card className="p-6 sm:p-8">
+    <div className="mx-auto max-w-2xl space-y-4 sm:space-y-6">
+      <Card className="p-5 sm:p-8">
         <div className="flex items-center gap-4">
           <div
-            className="flex h-14 w-14 items-center justify-center rounded-full bg-brand-600 text-xl font-bold text-white"
+            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-brand-500 to-brand-700 text-lg font-bold text-white shadow-sm shadow-brand-600/30 sm:h-14 sm:w-14 sm:text-xl"
             aria-hidden="true"
           >
             {user.name.charAt(0).toUpperCase()}
           </div>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight text-ink">{user.name}</h1>
-            <p className="text-sm text-muted">{user.email}</p>
+          <div className="min-w-0">
+            <h1 className="truncate text-lg font-bold tracking-tight text-ink sm:text-2xl">{user.name}</h1>
+            <p className="truncate text-[13px] text-muted sm:text-sm">{user.email}</p>
           </div>
         </div>
 
-        <dl className="mt-8 grid gap-4 border-t border-line pt-6 text-sm sm:grid-cols-2">
+        <dl className="mt-6 grid gap-4 border-t border-line pt-5 text-sm sm:mt-8 sm:grid-cols-2 sm:pt-6">
           <div>
             <dt className="text-muted">Nama</dt>
             <dd className="mt-0.5 font-medium text-ink">{user.name}</dd>
@@ -75,17 +75,17 @@ export default function AccountPage() {
           </div>
         </dl>
 
-        <div className="mt-8 border-t border-line pt-6">
-          <Button variant="danger" onClick={onLogout} loading={loggingOut}>
+        <div className="mt-6 border-t border-line pt-5 sm:mt-8 sm:pt-6">
+          <Button variant="danger" className="w-full sm:w-auto" onClick={onLogout} loading={loggingOut}>
             Keluar
           </Button>
         </div>
       </Card>
 
-      <Card className="p-6">
-        <h2 className="font-semibold text-ink">Segera hadir</h2>
+      <Card className="p-5 sm:p-6">
+        <h2 className="text-[15px] font-semibold text-ink">Segera hadir</h2>
         <p className="mt-1 text-sm text-muted">
-          Stasiun &amp; rute favorit, jadwal tersimpan, serta notifikasi keterlambatan KRL.
+          Jadwal tersimpan serta notifikasi keterlambatan KRL.
         </p>
       </Card>
     </div>

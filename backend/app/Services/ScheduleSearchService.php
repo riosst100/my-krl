@@ -51,20 +51,7 @@ class ScheduleSearchService
         $query = $this->query($filters);
 
         if ($to) {
-            // Only trains that stop at $to after this station, with the arrival time there.
-            $query->join('train_stops as from_stop', function ($join) {
-                $join->on('from_stop.service_date', '=', 'schedules.service_date')
-                    ->on('from_stop.train_number', '=', 'schedules.train_number')
-                    ->on('from_stop.station_id', '=', 'schedules.station_id');
-            })->join('train_stops as to_stop', function ($join) use ($to) {
-                $join->on('to_stop.service_date', '=', 'from_stop.service_date')
-                    ->on('to_stop.train_number', '=', 'from_stop.train_number')
-                    ->on('to_stop.sequence', '>', 'from_stop.sequence')
-                    ->where('to_stop.station_id', '=', $to->id);
-            })->addSelect([
-                'to_stop.time as to_station_time',
-                DB::raw('(to_stop.sequence - from_stop.sequence) as stops_to_station'),
-            ]);
+            $this->joinTrip($query, $to);
         }
 
         // Facets are computed over the whole day so the UI can offer them as filters.
@@ -87,6 +74,60 @@ class ScheduleSearchService
                 'lines' => $day->pluck('trainLine')->filter()->unique('id')->map->only(['id', 'name', 'color'])->sortBy('name')->values(),
                 'last_synced_at' => $this->lastSyncedAt(),
             ],
+        ];
+    }
+
+    /**
+     * Only trains that stop at $to after the schedule's station, with the arrival time there.
+     */
+    private function joinTrip(Builder $query, Station $to): void
+    {
+        $query->join('train_stops as from_stop', function ($join) {
+            $join->on('from_stop.service_date', '=', 'schedules.service_date')
+                ->on('from_stop.train_number', '=', 'schedules.train_number')
+                ->on('from_stop.station_id', '=', 'schedules.station_id');
+        })->join('train_stops as to_stop', function ($join) use ($to) {
+            $join->on('to_stop.service_date', '=', 'from_stop.service_date')
+                ->on('to_stop.train_number', '=', 'from_stop.train_number')
+                ->on('to_stop.sequence', '>', 'from_stop.sequence')
+                ->where('to_stop.station_id', '=', $to->id);
+        })->addSelect([
+            'to_stop.time as to_station_time',
+            DB::raw('(to_stop.sequence - from_stop.sequence) as stops_to_station'),
+        ]);
+    }
+
+    /**
+     * The next trains from $from that stop at $to, starting now (Asia/Jakarta); rolls
+     * over to the next synced service date when fewer than $limit are left today.
+     *
+     * @return array{departures: Collection<int, Schedule>, has_schedules_today: bool}
+     */
+    public function nextRouteDepartures(Station $from, Station $to, int $limit, ?CarbonInterface $now = null): array
+    {
+        $now ??= now();
+        $today = $now->toDateString();
+        $base = fn (string $date) => tap(
+            $this->query(['date' => $date, 'station' => $from->code]),
+            fn (Builder $q) => $this->joinTrip($q, $to),
+        );
+
+        $departures = $base($today)->where('schedules.departure_time', '>=', $now->format('H:i:s'))->limit($limit)->get();
+
+        if ($departures->count() < $limit) {
+            $nextDate = Schedule::query()
+                ->where('station_id', $from->id)
+                ->whereDate('service_date', '>', $today)
+                ->min('service_date');
+
+            if ($nextDate) {
+                $departures = $departures->concat($base(substr((string) $nextDate, 0, 10))->limit($limit - $departures->count())->get());
+            }
+        }
+
+        return [
+            'departures' => $departures,
+            'has_schedules_today' => $this->hasSchedulesToday($from, $now),
         ];
     }
 
@@ -129,6 +170,62 @@ class ScheduleSearchService
                 'has_schedules_today' => $base()->whereDate('service_date', $today)->exists(),
             ];
         });
+    }
+
+    /**
+     * The soonest departures starting now (Asia/Jakarta), across all active
+     * stations or from one station. Rolls over to the next synced service
+     * date when needed.
+     *
+     * @return Collection<int, Schedule>
+     */
+    public function upcoming(int $limit, ?Station $station = null, ?CarbonInterface $now = null): Collection
+    {
+        $now ??= now();
+        $today = $now->toDateString();
+        $base = fn () => Schedule::query()
+            ->with(['trainLine', 'station'])
+            ->when(
+                $station,
+                fn (Builder $q) => $q->where('station_id', $station->id),
+                fn (Builder $q) => $q->whereHas('station', fn (Builder $s) => $s->active()),
+            );
+
+        $departures = $base()
+            ->whereDate('service_date', $today)
+            ->where('departure_time', '>=', $now->format('H:i:s'))
+            ->orderBy('departure_time')
+            ->orderBy('id')
+            ->limit($limit)
+            ->get();
+
+        if ($departures->count() < $limit) {
+            $nextDate = $base()->whereDate('service_date', '>', $today)->min('service_date');
+
+            if ($nextDate) {
+                $departures = $departures->concat(
+                    $base()->whereDate('service_date', $nextDate)->orderBy('departure_time')->orderBy('id')->limit($limit - $departures->count())->get()
+                );
+            }
+        }
+
+        return $departures;
+    }
+
+    /**
+     * Whether any schedule exists today (for one station, or any active station).
+     * Lets the UI tell "no more trains today" apart from "not synced".
+     */
+    public function hasSchedulesToday(?Station $station = null, ?CarbonInterface $now = null): bool
+    {
+        return Schedule::query()
+            ->whereDate('service_date', ($now ?? now())->toDateString())
+            ->when(
+                $station,
+                fn (Builder $q) => $q->where('station_id', $station->id),
+                fn (Builder $q) => $q->whereHas('station', fn (Builder $s) => $s->active()),
+            )
+            ->exists();
     }
 
     /**

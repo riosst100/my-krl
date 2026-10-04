@@ -145,7 +145,7 @@ export default function AdminStationDetailPage({ params }: PageProps<"/admin/sta
                       <td className="tabular px-5 py-2.5 text-slate-600">{d.last_departure}</td>
                       <td className="px-5 py-2.5 text-right">
                         <Link
-                          href={`/admin/schedules?station=${station.code}&date=${d.date}`}
+                          href={`/admin/schedules?station=${station.code}`}
                           className="font-semibold text-brand-600 hover:underline"
                         >
                           Lihat

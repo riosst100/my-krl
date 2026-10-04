@@ -13,12 +13,9 @@ export function getStationSchedules(stationCode: string, filters: ScheduleFilter
   });
 }
 
-/** Stations reachable from a station on a date (trains that stop there later). */
-export async function getStationDestinations(stationCode: string, date: string, signal?: AbortSignal): Promise<ReachableStation[]> {
-  const res = await apiFetch<{ data: ReachableStation[] }>(`/stations/${encodeURIComponent(stationCode)}/destinations`, {
-    query: { date },
-    signal,
-  });
+/** Stations reachable from a station in the latest timetable (trains that stop there later). */
+export async function getStationDestinations(stationCode: string, signal?: AbortSignal): Promise<ReachableStation[]> {
+  const res = await apiFetch<{ data: ReachableStation[] }>(`/stations/${encodeURIComponent(stationCode)}/destinations`, { signal });
   return res.data;
 }
 

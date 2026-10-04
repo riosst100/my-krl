@@ -56,7 +56,7 @@ return [
     |
     */
 
-    'schedules_api_url' => env('KCI_SCHEDULES_API_URL', 'https://www.kci.id/api/krl/schedules?stationid=THB&timefrom=00%3A00&timeto=23%3A00'),
+    'schedules_api_url' => env('KCI_SCHEDULES_API_URL', 'https://www.kci.id/api/krl/schedules?stationid=THB&timefrom=00%3A00&timeto=23%3A59'),
 
     'schedules_api_token' => env('KCI_SCHEDULES_API_TOKEN'),
 
@@ -95,8 +95,18 @@ return [
     // Schedules older than this many days are pruned after each sync.
     'retention_days' => (int) env('KCI_RETENTION_DAYS', 7),
 
-    // Daily schedule sync time (application timezone).
-    'sync_time' => env('KCI_SYNC_TIME', '02:00'),
+    // Daily schedule sync times (application timezone, comma-separated HH:MM) and
+    // which service day they store: 0 = the current day. The 00:00 run already
+    // belongs to the new service day; the 04:00 run refreshes it before the
+    // first trains leave.
+    'sync_times' => array_values(array_filter(array_map('trim', explode(',', (string) env('KCI_SYNC_TIMES', '00:00,04:00'))))),
+    'sync_day_offset' => (int) env('KCI_SYNC_DAY_OFFSET', 0),
+
+    // Timetable watcher: fingerprints KCI's current timetable to learn when KCI
+    // publishes a new one (see Admin -> Sinkronisasi).
+    'watch_station' => env('KCI_WATCH_STATION'),
+    'watch_every_minutes' => (int) env('KCI_WATCH_EVERY_MINUTES', 15),
+    'watch_retention_days' => (int) env('KCI_WATCH_RETENTION_DAYS', 30),
 
     // Monthly station sync: day of month (1-28) and time.
     'station_sync_day' => (int) env('KCI_STATION_SYNC_DAY', 1),

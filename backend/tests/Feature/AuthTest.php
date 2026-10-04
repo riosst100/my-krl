@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Station;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -9,6 +10,15 @@ use Tests\TestCase;
 class AuthTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        Station::create(['code' => 'THB', 'name' => 'Tanah Abang', 'slug' => 'tanah-abang']);
+        Station::create(['code' => 'SUD', 'name' => 'Sudirman', 'slug' => 'sudirman']);
+        Station::create(['code' => 'SG', 'name' => 'Serang', 'slug' => 'serang', 'is_active' => false]);
+    }
 
     public function test_user_can_register_and_cannot_choose_their_role(): void
     {
@@ -29,6 +39,7 @@ class AuthTest extends TestCase
         $this->assertFalse($user->isAdmin());
         $this->assertNotSame('Rahasia123', $user->password);
         $this->assertAuthenticatedAs($user, 'web');
+        $this->assertSame(0, $user->favoriteRoutes()->count(), 'favourite routes are chosen after signing in');
     }
 
     public function test_registration_is_validated(): void

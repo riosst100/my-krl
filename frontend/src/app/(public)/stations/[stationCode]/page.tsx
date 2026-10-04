@@ -6,7 +6,6 @@ import { TripPicker } from "@/components/schedule/TripPicker";
 import { ApiError } from "@/lib/api/client";
 import { getStation } from "@/lib/api/stations";
 import type { Station } from "@/lib/api/types";
-import { isValidDate, todayInJakarta } from "@/lib/format";
 
 async function loadStation(code: string): Promise<Station> {
   try {
@@ -29,30 +28,31 @@ export async function generateMetadata(props: PageProps<"/stations/[stationCode]
 
 export default async function StationPage(props: PageProps<"/stations/[stationCode]">) {
   const { stationCode } = await props.params;
-  const { date: rawDate, to: rawTo } = await props.searchParams;
+  const { to: rawTo } = await props.searchParams;
   const station = await loadStation(stationCode);
-  const date = typeof rawDate === "string" && isValidDate(rawDate) ? rawDate : todayInJakarta();
   const to = typeof rawTo === "string" && /^[A-Za-z0-9-]{1,120}$/.test(rawTo) ? rawTo.toUpperCase() : undefined;
 
   return (
     <>
-      <nav className="mb-4 text-sm text-muted" aria-label="Breadcrumb">
+      <nav className="mb-3 text-[13px] text-muted sm:mb-4" aria-label="Breadcrumb">
         <Link href="/stations" className="hover:text-ink hover:underline">
           Stasiun
         </Link>{" "}
-        / <span className="text-ink">{station.name}</span>
+        <span aria-hidden="true">/</span> <span className="font-medium text-ink">{station.name}</span>
       </nav>
 
-      <div className="mb-6">
-        <span className="inline-block rounded-md bg-ink px-2 py-0.5 text-xs font-bold tracking-wider text-white">{station.code}</span>
-        <h1 className="mt-2 text-3xl font-extrabold tracking-tight text-ink">Stasiun {station.name}</h1>
+      <div className="mb-4 flex items-center gap-3 sm:mb-6">
+        <span className="inline-flex h-10 min-w-10 shrink-0 items-center justify-center rounded-xl bg-ink px-2 text-xs font-bold tracking-wider text-white sm:h-12 sm:min-w-12 sm:text-sm">
+          {station.code}
+        </span>
+        <h1 className="text-xl font-extrabold tracking-tight text-ink sm:text-3xl">Stasiun {station.name}</h1>
       </div>
 
-      <div className="mb-6 rounded-2xl border border-line bg-white p-4 shadow-sm sm:p-5">
-        <TripPicker stationCode={station.code} stationName={station.name} date={date} to={to} />
+      <div className="mb-4 rounded-2xl border border-line/80 bg-white p-4 shadow-card sm:mb-6 sm:p-5">
+        <TripPicker stationCode={station.code} stationName={station.name} to={to} />
       </div>
 
-      <ScheduleBoard key={`${station.code}-${date}-${to ?? ""}`} stationCode={station.code} date={date} to={to} />
+      <ScheduleBoard key={`${station.code}-${to ?? ""}`} stationCode={station.code} to={to} />
     </>
   );
 }

@@ -87,7 +87,7 @@ The admin comes from `ADMIN_EMAIL` / `ADMIN_PASSWORD` in `backend/.env`. **Chang
 | `postgres`  | PostgreSQL 17 (`krl` database + `krl_test` for automated tests)          |
 | `backend`   | `php artisan serve` on :8000; runs migrations + seeding on startup       |
 | `queue`     | `queue:work` — runs "Sync KCI Data Now" jobs from the admin panel        |
-| `scheduler` | `schedule:work` — `kci:sync-schedules` daily at `KCI_SYNC_TIME`, `kci:sync-stations` monthly |
+| `scheduler` | `schedule:work` — `kci:sync-schedules` daily at `KCI_SYNC_TIMES` (default 00:00 and 04:00), `kci:sync-stations` monthly |
 | `frontend`  | `next dev` on :3000                                                     |
 
 Redis is not used: sessions, cache, locks and the queue use the database.
@@ -181,7 +181,7 @@ Compose injects the database host/credentials, `APP_URL`, `FRONTEND_URL` and `SA
 | `KCI_SYNC_STATIONS` | Comma-separated station codes to sync (e.g. `THB` while testing); empty = all active stations |
 | `KCI_SYNC_DAYS` | Service days stored per sync (starting today) |
 | `KCI_RETENTION_DAYS` | Older schedules are pruned |
-| `KCI_SYNC_TIME` | Daily schedule sync time (Asia/Jakarta) |
+| `KCI_SYNC_TIMES` | Daily schedule sync times, comma-separated (Asia/Jakarta, default `00:00,04:00`); `KCI_SYNC_DAY_OFFSET` (default 0) = which service day they store |
 | `KCI_STATION_SYNC_DAY`, `KCI_STATION_SYNC_TIME` | Monthly station sync: day of month and time (default 1st, 01:00) |
 | `KCI_STATIONS_API_URL` | Default Stations API URL (`https://www.kci.id/api/krl/stations`); admins can override it in the panel |
 | `KCI_STATIONS_API_TOKEN` | Optional bearer token for the Stations API URL |
@@ -275,18 +275,18 @@ Two separate syncs, each recorded in `sync_logs` with its own `type`:
 | Sync | Command | Schedule | Admin button |
 | --- | --- | --- | --- |
 | Stations (`kci_stations`) | `kci:sync-stations` | monthly (`KCI_STATION_SYNC_DAY` at `KCI_STATION_SYNC_TIME`) | Admin → Stasiun → "Sync Stasiun Sekarang" |
-| Schedules (`kci_schedules`) | `kci:sync-schedules` | daily (`KCI_SYNC_TIME`) | Admin → Sinkronisasi → "Sync KCI Data Now" |
+| Schedules (`kci_schedules`) | `kci:sync-schedules` | daily (`KCI_SYNC_TIMES`: 00:00 and 04:00) | Admin → Sinkronisasi → "Sync KCI Data Now" |
 
 **Stations API URL.** The station sync reads the station list from a full URL, default `https://www.kci.id/api/krl/stations` (`KCI_STATIONS_API_URL`). Admins can change it in **Admin → Stasiun → Ubah URL** (stored in the `settings` table, overrides `.env`), dry-run it with **Tes URL** (fetch + parse, nothing saved) or reset it to the default. An empty URL means "take the station list from the KCI client" (mock or `KCI_API_URL`). Optional bearer token: `KCI_STATIONS_API_TOKEN`.
 
 The parser expects the KCI shape `{"status":200,"data":[{"sta_id","sta_name","group_wil","fg_enable"}]}` (verified against the live URL on 2026-10-03: 111 stations) and also accepts a top-level array or a list under `stations`/`result`, with alternative field names (`code`/`name`/`active`...). KCI's area header rows (`WIL0 AREA JABODETABEK`, `WIL1 AREA MERAK`, `WIL6 AREA YOGYAKARTA`) are not stations: they become operational-area names (`operational_area_name`). A failure (e.g. HTTP 403 from Cloudflare, non-JSON response) marks the sync `failed` with the reason and leaves existing stations untouched.
 
-**Schedules API URL.** The daily schedule sync reads each station's timetable from a full URL, default `https://www.kci.id/api/krl/schedules?stationid=THB&timefrom=00%3A00&timeto=23%3A00` (`KCI_SCHEDULES_API_URL`). The value of `stationid` (or a `{station}` placeholder) is replaced by the code of every synced station (`KCI_SYNC_STATIONS`, currently `THB`). Admins manage it in **Admin → Sinkronisasi** (Ubah URL / Tes URL / Kembalikan ke default), next to the last sync date & time and the "Sync KCI Data Now" button. Optional bearer token: `KCI_SCHEDULES_API_TOKEN`.
+**Schedules API URL.** The daily schedule sync reads each station's timetable from a full URL, default `https://www.kci.id/api/krl/schedules?stationid=THB&timefrom=00%3A00&timeto=23%3A59` (`KCI_SCHEDULES_API_URL`). The value of `stationid` (or a `{station}` placeholder) is replaced by the code of every synced station (`KCI_SYNC_STATIONS`, currently `THB`). Admins manage it in **Admin → Sinkronisasi** (Ubah URL / Tes URL / Kembalikan ke default), next to the last sync date & time and the "Sync KCI Data Now" button. Optional bearer token: `KCI_SCHEDULES_API_TOKEN`.
 
 - The response is the KCI shape `{"status":200,"data":[{"train_id","ka_name","route_name","dest","time_est","color","dest_time"}]}` (verified on 2026-10-03: 344 trains at Tanah Abang; a field-by-field comparison of all 344 rows against `/api/v1/stations/THB/schedules` showed no differences).
 - The upstream timetable is **not dated**, so a URL-based sync stores it for **today only** (no copying onto future dates); the date picker therefore offers the days that were actually synced.
 - Stored as published: alphanumeric train numbers (`5198C`), routing suffixes (`KAMPUNGBANDAN VIA MRI` → "Kampung Bandan via MRI"), `route_name`, and the **per-train colour** (`schedules.color`; a line's colour is the colour most of its trains use).
-- `timeto=23:00` in the default URL means trains after 23:00 are not included — change the URL to `23%3A59` if they are needed.
+- The default URL uses `timefrom=00:00&timeto=23:59`, so the whole day (including trains after 23:00) is included.
 
 **Train Stops API URL & "Ke stasiun".** After a URL-based schedule sync, the stops of every synced train are fetched from `https://www.kci.id/api/krl/train-schedule?trainid=5701C` (`KCI_TRAIN_STOPS_API_URL`; the `trainid` value or a `{train}` placeholder is replaced per train) and stored in `train_stops` (`service_date`, `train_number`, `sequence`, `station_code`/`station_id`, `time`, `is_transit`). Trains whose stops are already stored for that day are skipped, so re-syncs are cheap; the first sync of a day makes one request per train (~344 for Tanah Abang). KCI answers slowly (3–7 s per request), so stops are fetched in parallel batches (`KCI_TRAIN_STOPS_CONCURRENCY`, default 5) and failures are retried once. The KCI web API is rate limited (`x-ratelimit-limit: 60`): HTTP 429 responses are retried after `Retry-After` (or `KCI_RATE_LIMIT_PAUSE_SECONDS`, max 2 retries) and batches pause when `X-RateLimit-Remaining` gets low; if it still fails, the sync is logged as failed and existing data is kept. Admins manage the URL in **Admin → Sinkronisasi → Pemberhentian kereta**; an empty URL disables it. This powers the **"Ke stasiun"** picker on `/stations/{code}` and `/schedule`: only trains that stop at the chosen station *after* the departure station are listed, with the arrival time there and the number of stations.
 
@@ -310,6 +310,7 @@ The scheduler is defined in `backend/routes/console.php` and runs inside the `sc
 | `stations` | `code` (unique, KCI `sta_id`), `name`, `slug` (unique), `latitude/longitude` (nullable, admin-editable — not provided by KCI), `operational_area`, `kci_enabled`, `is_active`, `synced_at` |
 | `train_lines` | KCI `ka_name` + line colour |
 | `schedules` | one train at one station on one date: `train_number`, `train_line_id`, `route_name`, `destination`, `departure_time`, `destination_arrival_time`, `service_date`; unique `(station_id, service_date, train_number)`, indexes on `(station_id, service_date, departure_time)` and `(service_date, train_number)` |
+| `favorite_routes` | `user_id`, `from_station_id`, `to_station_id`, `position`; unique per user/route and user/position (1–4 per user) |
 | `train_stops` | every stop of a train per service date (KCI `train-schedule`); unique `(service_date, train_number, sequence)`, index `(service_date, station_id, train_number)` |
 | `sync_logs` | type, status, trigger, triggered_by, source, records/stations processed, error_message, meta (failed stations), started/finished |
 
@@ -331,6 +332,16 @@ All responses are JSON: `{"data": ..., "meta": {...}}`. Errors: `{"message": "..
 | GET | `/auth/me` | session/token |
 | POST / DELETE | `/auth/token` | mobile token issue / revoke |
 
+### Favourite stations (signed-in user)
+
+Favourites are an account feature: **favourite routes (departure → destination station, 1 to 4)** are chosen in a dialog on the homepage right after signing in (mandatory until the first route exists) and stored on the account. The homepage ("Rute Favorit") then shows the next 2 trains of each route that stop at the destination; routes can be changed later ("Ubah rute"). Guests see the **soonest departures from now** across all stations (`GET /schedules/upcoming`) plus an invitation to sign up.
+
+| Method | Path | Notes |
+| --- | --- | --- |
+| GET | `/me/favorite-routes` | ordered list of `{from, to}`; `meta.min` = 1, `meta.max` = 4 |
+| PUT | `/me/favorite-routes` | `{"routes": [{"from": "THB", "to": "SUD"}]}` — 1–4 distinct routes between different active stations |
+| GET | `/me/favorite-routes/departures?limit=2` | next trains per favourite route (needs train stop data) |
+
 ### Stations & schedules (public)
 
 | Method | Path | Query |
@@ -341,6 +352,8 @@ All responses are JSON: `{"data": ..., "meta": {...}}`. Errors: `{"message": "..
 | GET | `/stations/{code-or-slug}/destinations` | `date` — stations reachable from here (later stops of its trains), with train counts |
 | GET | `/schedules` | same filters + `station`, `per_page` (paginated) |
 | GET | `/schedules/dates` | service dates available in the database |
+| GET | `/schedules/upcoming` | `limit` (1–20, default 5), optional `station` (code/slug) — soonest departures from now (WIB), across all active stations or from one departure station; rolls over to the next synced date. The guest homepage uses it, with the chosen station in the URL (`/?dari=THB`) |
+| GET | `/schedules/next` | `stations=THB,SUD` (max 5), `limit` (1–5, default 2) — upcoming departures from now (WIB) per station; falls back to the next synced date when today is over |
 
 Example:
 
@@ -421,3 +434,5 @@ Components only call functions from `lib/api/*`; no `fetch` calls are scattered 
 ## 8. Roadmap hooks
 
 Favourite stations/routes/schedules and push/delay notifications can be added as new tables related to `users` and `stations`/`schedules`, exposed under `/api/v1/me/...` with `auth:sanctum` — the same endpoints will serve the Flutter app via bearer tokens.
+
+**Fresh data, no date picker.** After a successful sync via the Schedules API URL, every schedule row (and train stop) that the run did not write is deleted, so the tables only ever hold the latest timetable. The public site has no date selection: the API always serves the latest synced service date and ignores `?date=`.

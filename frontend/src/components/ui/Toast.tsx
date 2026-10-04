@@ -45,13 +45,13 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       {children}
       <div
         aria-live="polite"
-        className="pointer-events-none fixed inset-x-0 bottom-4 z-50 flex flex-col items-center gap-2 px-4 sm:items-end sm:px-6"
+        className="pointer-events-none fixed inset-x-0 bottom-20 z-50 md:bottom-4 flex flex-col items-center gap-2 px-4 sm:items-end sm:px-6"
       >
         {toasts.map((t) => (
           <div
             key={t.id}
             role={t.type === "error" ? "alert" : "status"}
-            className={`animate-toast-in pointer-events-auto flex w-full max-w-sm items-start gap-3 rounded-xl border px-4 py-3 text-sm shadow-lg ${STYLES[t.type]}`}
+            className={`animate-toast-in pointer-events-auto flex w-full max-w-sm items-start gap-3 rounded-xl border px-4 py-3 text-sm shadow-raised ${STYLES[t.type]}`}
           >
             <span className="flex-1">{t.message}</span>
             <button

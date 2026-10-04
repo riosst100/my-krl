@@ -5,6 +5,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { Alert, Button, Card, TextField } from "@/components/ui";
 import { ApiError, errorMessage } from "@/lib/api/client";
 import { useAdminAuth } from "@/lib/auth/AdminAuthProvider";
+import { useHydrated } from "@/lib/hooks/useHydrated";
 
 export default function AdminLoginPage() {
   const router = useRouter();
@@ -13,6 +14,8 @@ export default function AdminLoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // Until hydrated a click would submit natively and reload the page (wiping the form).
+  const hydrated = useHydrated();
 
   useEffect(() => {
     if (status === "authenticated") router.replace("/admin/dashboard");
@@ -54,7 +57,7 @@ export default function AdminLoginPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />
-            <Button type="submit" size="lg" className="w-full" loading={submitting}>
+            <Button type="submit" size="lg" className="w-full" loading={submitting} disabled={!hydrated}>
               Masuk
             </Button>
           </form>
