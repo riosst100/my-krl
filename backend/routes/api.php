@@ -40,6 +40,15 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
     Route::get('schedules/trains/{trainNumber}/stops', [V1\ScheduleController::class, 'trainStops'])->where('trainNumber', '[A-Za-z0-9]+')->name('schedules.train-stops');
     Route::get('schedules/upcoming', [V1\ScheduleController::class, 'upcoming'])->name('schedules.upcoming');
 
+    // --- Data pushed from the local machine (shared-secret token, see SYNC_INGEST_TOKEN) --
+    Route::prefix('ingest')->name('ingest.')->middleware('ingest')->group(function () {
+        Route::post('start', [V1\IngestController::class, 'start'])->name('start');
+        Route::post('stations', [V1\IngestController::class, 'stations'])->name('stations');
+        Route::post('schedules', [V1\IngestController::class, 'schedules'])->name('schedules');
+        Route::post('stops', [V1\IngestController::class, 'stops'])->name('stops');
+        Route::post('finish', [V1\IngestController::class, 'finish'])->name('finish');
+    });
+
     // --- Admin (separate "admin" session guard) ----------------------------
     Route::prefix('admin')->name('admin.')->group(function () {
         Route::post('auth/login', [Admin\AuthController::class, 'login'])->middleware('throttle:auth')->name('auth.login');
@@ -55,7 +64,6 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
             Route::patch('users/{user}/role', [Admin\UserController::class, 'updateRole'])->name('users.role');
 
             Route::get('stations', [Admin\StationController::class, 'index'])->name('stations.index');
-            Route::post('stations/sync', [Admin\StationController::class, 'sync'])->middleware('throttle:admin-sync')->name('stations.sync');
             Route::get('settings/stations-api', [Admin\StationsApiController::class, 'show'])->name('settings.stations-api.show');
             Route::put('settings/stations-api', [Admin\StationsApiController::class, 'update'])->name('settings.stations-api.update');
             Route::delete('settings/stations-api', [Admin\StationsApiController::class, 'reset'])->name('settings.stations-api.reset');
@@ -79,7 +87,8 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
             Route::get('sync-logs', [Admin\SyncController::class, 'index'])->name('sync.index');
             Route::get('sync-logs/{syncLog}', [Admin\SyncController::class, 'show'])->name('sync.show');
             Route::get('kci-watch', [Admin\SyncController::class, 'watch'])->name('kci-watch');
-            Route::post('sync', [Admin\SyncController::class, 'store'])->middleware('throttle:admin-sync')->name('sync.store');
+            Route::post('sync/import', [Admin\SyncController::class, 'import'])->middleware('throttle:admin-sync')->name('sync.import');
+            Route::post('sync/prod', [Admin\SyncController::class, 'push'])->middleware('throttle:admin-sync')->name('sync.push');
         });
     });
 });

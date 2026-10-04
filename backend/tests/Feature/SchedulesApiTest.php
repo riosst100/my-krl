@@ -211,6 +211,6 @@ class SchedulesApiTest extends TestCase
 
         $this->fromFrontend()->getJson('/api/v1/admin/sync-logs')
             ->assertOk()
-            ->assertJsonStructure(['meta' => ['in_progress', 'last_schedule_sync', 'last_successful_schedule_sync', 'next_schedule_sync']]);
+            ->assertJsonStructure(['meta' => ['mode', 'in_progress', 'last_sync', 'last_successful_sync']]);
     }
 }

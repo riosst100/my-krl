@@ -105,28 +105,14 @@ class StationSyncTest extends TestCase
             ->assertJsonValidationErrors(['latitude']);
     }
 
-    public function test_admin_can_trigger_station_sync(): void
+    public function test_station_list_has_no_manual_sync_any_more(): void
     {
         $admin = User::factory()->admin()->create();
+        $this->actingAs($admin, 'admin')->fromFrontend();
 
-        $this->actingAs($admin, 'admin')->fromFrontend()
-            ->postJson('/api/v1/admin/stations/sync')
-            ->assertAccepted()
-            ->assertJsonPath('data.type', SyncLog::TYPE_KCI_STATIONS);
-
-        $this->assertSame(3, Station::count());
-        $this->assertSame('success', SyncLog::latest('id')->first()->status->value);
-
-        $this->fromFrontend()->getJson('/api/v1/admin/stations')
+        $this->postJson('/api/v1/admin/stations/sync')->assertNotFound();
+        $this->getJson('/api/v1/admin/stations')
             ->assertOk()
-            ->assertJsonPath('meta.last_station_sync.status', 'success')
-            ->assertJsonStructure(['meta' => ['next_station_sync', 'station_sync_in_progress']]);
-    }
-
-    public function test_normal_users_cannot_trigger_station_sync(): void
-    {
-        $user = User::factory()->create();
-
-        $this->actingAs($user, 'web')->fromFrontend()->postJson('/api/v1/admin/stations/sync')->assertUnauthorized();
+            ->assertJsonStructure(['meta' => ['last_station_sync', 'station_sync_in_progress']]);
     }
 }

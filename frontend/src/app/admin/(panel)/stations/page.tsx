@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { StationSyncPanel } from "@/components/admin/StationSyncPanel";
 import {
   Badge,
   Button,
@@ -70,8 +69,6 @@ export default function AdminStationsPage() {
         title="Stasiun"
         description="Data master stasiun. Stasiun nonaktif tidak tampil di situs publik dan tidak disinkronkan jadwalnya."
       />
-
-      <StationSyncPanel meta={meta} onChanged={reload} />
 
       <div className="mb-4 grid gap-4 sm:grid-cols-[1fr_200px]">
         <TextField

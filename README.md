@@ -86,8 +86,8 @@ The admin comes from `ADMIN_EMAIL` / `ADMIN_PASSWORD` in `backend/.env`. **Chang
 | ----------- | ----------------------------------------------------------------------- |
 | `postgres`  | PostgreSQL 17 (`krl` database + `krl_test` for automated tests)          |
 | `backend`   | `php artisan serve` on :8000; runs migrations + seeding on startup       |
-| `queue`     | `queue:work` — runs "Sync KCI Data Now" jobs from the admin panel        |
-| `scheduler` | `schedule:work` — `kci:sync-schedules` daily at `KCI_SYNC_TIMES` (default 00:00 and 04:00), `kci:sync-stations` monthly |
+| `queue`     | `queue:work` — runs the "Sync Data to Prod" job started from the admin panel |
+| `scheduler` | `schedule:work` — nothing is scheduled any more (the server cannot reach KCI); kept for future jobs |
 | `frontend`  | `next dev` on :3000                                                     |
 
 Redis is not used: sessions, cache, locks and the queue use the database.
@@ -181,8 +181,8 @@ Compose injects the database host/credentials, `APP_URL`, `FRONTEND_URL` and `SA
 | `KCI_SYNC_STATIONS` | Comma-separated station codes to sync (e.g. `THB` while testing); empty = all active stations |
 | `KCI_SYNC_DAYS` | Service days stored per sync (starting today) |
 | `KCI_RETENTION_DAYS` | Older schedules are pruned |
-| `KCI_SYNC_TIMES` | Daily schedule sync times, comma-separated (Asia/Jakarta, default `00:00,04:00`); `KCI_SYNC_DAY_OFFSET` (default 0) = which service day they store |
-| `KCI_STATION_SYNC_DAY`, `KCI_STATION_SYNC_TIME` | Monthly station sync: day of month and time (default 1st, 01:00) |
+| `PROD_SYNC_URL`, `PROD_SYNC_TOKEN` | **Local only**: base URL of the production API (e.g. `https://api-krl.inovasionline.com`) and the shared secret for "Sync Data to Prod" |
+| `SYNC_INGEST_TOKEN` | **Server only**: the same secret; it switches on the receiving API (`/api/v1/ingest/*`). Empty = receiving is off |
 | `KCI_STATIONS_API_URL` | Default Stations API URL (`https://www.kci.id/api/krl/stations`); admins can override it in the panel |
 | `KCI_STATIONS_API_TOKEN` | Optional bearer token for the Stations API URL |
 | `KCI_SCHEDULES_API_URL` | Default Schedules API URL (`stationid` / `{station}` is replaced per station); admins can override it in the panel; empty = KCI client |
@@ -270,14 +270,18 @@ PostgreSQL (stations, train_lines, schedules, sync_logs)  ◄── all API read
 - `MockKciClient` generates a deterministic, realistic timetable (5 lines, ~70 stations, peak/off-peak/weekend headways) in the same shape. **Its times are generated, not official.**
 - To connect another source, implement `App\Services\Kci\Contracts\KciClient` and bind it in `AppServiceProvider` — nothing else changes.
 
-Two separate syncs, each recorded in `sync_logs` with its own `type`:
+**The production server cannot reach KCI**, so there is no automatic or manual KCI sync on the server. The **local machine** (which can reach KCI) fetches the data and pushes it to production:
 
-| Sync | Command | Schedule | Admin button |
-| --- | --- | --- | --- |
-| Stations (`kci_stations`) | `kci:sync-stations` | monthly (`KCI_STATION_SYNC_DAY` at `KCI_STATION_SYNC_TIME`) | Admin → Stasiun → "Sync Stasiun Sekarang" |
-| Schedules (`kci_schedules`) | `kci:sync-schedules` | daily (`KCI_SYNC_TIMES`: 00:00 and 04:00) | Admin → Sinkronisasi → "Sync KCI Data Now" |
+1. Local: Admin → Sinkronisasi → Sync ke Prod → choose the stations to sync ("Stasiun yang disinkronkan"), then **Sync Data to Prod**. A background job (`PushToProdJob`) fetches the timetable and train stops of those stations from KCI into the local database, then sends the stations, schedules and train stops to the production API in small batches. A progress bar shows the current step (fetch schedules → fetch train stops → send stations → send schedules → send train stops). Each push is a `prod_push` row in `sync_logs`.
+2. Server: `POST /api/v1/ingest/{start,stations,schedules,stops,finish}` (bearer token = `SYNC_INGEST_TOKEN`) stores what it receives, replaces each station's timetable and, on `finish`, deletes everything that was not part of the push (other dates, stations that were not sent). Each received push is a `kci_schedules` row (`trigger = ingest`). Existing stations keep their activation and manually entered coordinates.
 
-**Stations API URL.** The station sync reads the station list from a full URL, default `https://www.kci.id/api/krl/stations` (`KCI_STATIONS_API_URL`). Admins can change it in **Admin → Stasiun → Ubah URL** (stored in the `settings` table, overrides `.env`), dry-run it with **Tes URL** (fetch + parse, nothing saved) or reset it to the default. An empty URL means "take the station list from the KCI client" (mock or `KCI_API_URL`). Optional bearer token: `KCI_STATIONS_API_TOKEN`.
+**Admin → Sinkronisasi is a section with four sub menus:** *Sync ke Prod* (push + which stations), *Import Manual* (pasted JSON), *Sumber Data* (the KCI API URLs for stations, schedules and train stops; local only) and *Riwayat* (log of every sync).
+
+**Manual import (JSON).** When even the local machine cannot reach KCI, Admin → Sinkronisasi → Import Manual accepts the pasted response of a KCI API call (`/schedules?stationid=…`, `/train-schedule?trainid=…` or `/stations`; `POST /api/v1/admin/sync/import`). It uses the same parsers and validation as a fetched response and works on the local machine and on the server. Schedules are stored for today for the chosen station (older days are removed); invalid JSON or an unexpected shape is reported next to the field. To send what was imported to prod, untick "Ambil data dari KCI dulu" before **Sync Data to Prod** (`POST /api/v1/admin/sync/prod` with `fetch: false`).
+
+Setup: set `PROD_SYNC_URL` and `PROD_SYNC_TOKEN` in the local `backend/.env`, and the same secret as `SYNC_INGEST_TOKEN` in the server's `.env`. `kci:sync-stations` and `kci:sync-schedules` still exist as manual commands for the local machine (e.g. to load the station list the first time); they are not scheduled.
+
+**Stations API URL.** The station sync reads the station list from a full URL, default `https://www.kci.id/api/krl/stations` (`KCI_STATIONS_API_URL`). Admins can change it in **Admin → Sinkronisasi → Sumber Data** (stored in the `settings` table, overrides `.env`), dry-run it with **Tes URL** (fetch + parse, nothing saved) or reset it to the default. An empty URL means "take the station list from the KCI client" (mock or `KCI_API_URL`). Optional bearer token: `KCI_STATIONS_API_TOKEN`.
 
 The parser expects the KCI shape `{"status":200,"data":[{"sta_id","sta_name","group_wil","fg_enable"}]}` (verified against the live URL on 2026-10-03: 111 stations) and also accepts a top-level array or a list under `stations`/`result`, with alternative field names (`code`/`name`/`active`...). KCI's area header rows (`WIL0 AREA JABODETABEK`, `WIL1 AREA MERAK`, `WIL6 AREA YOGYAKARTA`) are not stations: they become operational-area names (`operational_area_name`). A failure (e.g. HTTP 403 from Cloudflare, non-JSON response) marks the sync `failed` with the reason and leaves existing stations untouched.
 

@@ -1,8 +1,18 @@
 "use client";
 
 import { useState, type FormEvent, type ReactNode } from "react";
-import { SyncStatusBadge, TRIGGER_LABELS } from "@/components/admin/SyncStatusBadge";
-import { Alert, Badge, Button, Card, Skeleton, TextField } from "@/components/ui";
+import {
+  SyncStatusBadge,
+  TRIGGER_LABELS,
+} from "@/components/admin/SyncStatusBadge";
+import {
+  Alert,
+  Badge,
+  Button,
+  Card,
+  Skeleton,
+  TextField,
+} from "@/components/ui";
 import { useToast } from "@/components/ui/Toast";
 import { ApiError, errorMessage } from "@/lib/api/client";
 import type { SyncLog } from "@/lib/api/types";
@@ -77,7 +87,12 @@ export function ApiSyncPanel<P extends ApiPreview>(props: Props<P>) {
       toast(sync.startedMessage, "success");
       sync.onChanged();
     } catch (err) {
-      toast(err instanceof ApiError && err.status === 409 ? sync.conflictMessage : errorMessage(err), "error");
+      toast(
+        err instanceof ApiError && err.status === 409
+          ? sync.conflictMessage
+          : errorMessage(err),
+        "error",
+      );
     } finally {
       setSyncing(false);
     }
@@ -99,25 +114,41 @@ export function ApiSyncPanel<P extends ApiPreview>(props: Props<P>) {
             ) : setting.data ? (
               <>
                 <p className="mt-1 break-all font-mono text-sm text-ink">
-                  {setting.data.url || <span className="font-sans text-muted">{props.emptyUrlText}</span>}
+                  {setting.data.url || (
+                    <span className="font-sans text-muted">
+                      {props.emptyUrlText}
+                    </span>
+                  )}
                 </p>
                 <p className="mt-1 text-xs text-muted">
                   {setting.data.is_default ? (
                     <Badge>Default</Badge>
                   ) : (
                     <>
-                      Diubah {setting.data.updated_by ? `oleh ${setting.data.updated_by} ` : ""}pada {formatDateTime(setting.data.updated_at)}
+                      Diubah{" "}
+                      {setting.data.updated_by
+                        ? `oleh ${setting.data.updated_by} `
+                        : ""}
+                      pada {formatDateTime(setting.data.updated_at)}
                     </>
                   )}
                 </p>
               </>
             ) : (
-              <p className="mt-1 text-sm text-red-700">Pengaturan tidak dapat dimuat.</p>
+              <p className="mt-1 text-sm text-red-700">
+                Pengaturan tidak dapat dimuat.
+              </p>
             )}
-            {props.note && <p className="mt-2 text-xs text-muted">{props.note}</p>}
+            {props.note && (
+              <p className="mt-2 text-xs text-muted">{props.note}</p>
+            )}
           </div>
           {!editing && setting.data && (
-            <Button variant="secondary" size="sm" onClick={() => setEditing(true)}>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setEditing(true)}
+            >
               Ubah URL
             </Button>
           )}
@@ -143,48 +174,85 @@ export function ApiSyncPanel<P extends ApiPreview>(props: Props<P>) {
       </section>
 
       {sync && (
-      <section className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between" aria-labelledby={syncId}>
-        <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 id={syncId} className="font-semibold text-ink">
-              Terakhir sync
-            </h2>
-            {sync.last && <SyncStatusBadge status={sync.last.status} />}
-          </div>
-          {sync.last ? (
-            <>
-              <p className="mt-1 text-sm text-ink">
-                <time dateTime={sync.last.finished_at ?? sync.last.started_at ?? sync.last.created_at ?? undefined}>
-                  {formatDateTimeLong(sync.last.finished_at ?? sync.last.started_at ?? sync.last.created_at)}
-                </time>
-                <span className="text-muted">
-                  {" "}
-                  · {TRIGGER_LABELS[sync.last.trigger] ?? sync.last.trigger}
-                  {sync.last.triggered_by ? ` oleh ${sync.last.triggered_by.name}` : ""}
-                  {sync.last.source ? ` · sumber: ${sync.last.source}` : ""}
-                </span>
-              </p>
-              {(sync.last.status === "success" || sync.last.status === "partial") && sync.summary && (
-                <p className="mt-1 text-sm text-muted">{sync.summary(sync.last)}</p>
-              )}
-              {sync.last.error_message && <p className="mt-1 break-all text-sm text-red-700">{sync.last.error_message}</p>}
-              {sync.last.status !== "success" && sync.last.status !== "queued" && sync.last.status !== "running" && (
-                <p className="mt-1 text-sm text-muted">
-                  Terakhir berhasil: {sync.lastSuccess ? formatDateTimeLong(sync.lastSuccess.finished_at) : "belum pernah"}
+        <section
+          className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between"
+          aria-labelledby={syncId}
+        >
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 id={syncId} className="font-semibold text-ink">
+                Terakhir sync
+              </h2>
+              {sync.last && <SyncStatusBadge status={sync.last.status} />}
+            </div>
+            {sync.last ? (
+              <>
+                <p className="mt-1 text-sm text-ink">
+                  <time
+                    dateTime={
+                      sync.last.finished_at ??
+                      sync.last.started_at ??
+                      sync.last.created_at ??
+                      undefined
+                    }
+                  >
+                    {formatDateTimeLong(
+                      sync.last.finished_at ??
+                        sync.last.started_at ??
+                        sync.last.created_at,
+                    )}
+                  </time>
+                  <span className="text-muted">
+                    {" "}
+                    · {TRIGGER_LABELS[sync.last.trigger] ?? sync.last.trigger}
+                    {sync.last.triggered_by
+                      ? ` oleh ${sync.last.triggered_by.name}`
+                      : ""}
+                    {sync.last.source ? ` · sumber: ${sync.last.source}` : ""}
+                  </span>
                 </p>
-              )}
-            </>
-          ) : (
-            <p className="mt-1 text-sm text-muted">Belum pernah disinkronkan.</p>
-          )}
-          <p className="mt-2 text-xs text-muted">
-            {sync.scheduleText} · berikutnya {sync.next ? formatDateTimeLong(sync.next) : "—"}
-          </p>
-        </div>
-        <Button onClick={syncNow} loading={syncing} disabled={sync.inProgress} className="shrink-0">
-          {sync.inProgress ? "Sinkronisasi berjalan…" : sync.syncLabel}
-        </Button>
-      </section>
+                {(sync.last.status === "success" ||
+                  sync.last.status === "partial") &&
+                  sync.summary && (
+                    <p className="mt-1 text-sm text-muted">
+                      {sync.summary(sync.last)}
+                    </p>
+                  )}
+                {sync.last.error_message && (
+                  <p className="mt-1 break-all text-sm text-red-700">
+                    {sync.last.error_message}
+                  </p>
+                )}
+                {sync.last.status !== "success" &&
+                  sync.last.status !== "queued" &&
+                  sync.last.status !== "running" && (
+                    <p className="mt-1 text-sm text-muted">
+                      Terakhir berhasil:{" "}
+                      {sync.lastSuccess
+                        ? formatDateTimeLong(sync.lastSuccess.finished_at)
+                        : "belum pernah"}
+                    </p>
+                  )}
+              </>
+            ) : (
+              <p className="mt-1 text-sm text-muted">
+                Belum pernah disinkronkan.
+              </p>
+            )}
+            <p className="mt-2 text-xs text-muted">
+              {sync.scheduleText} · berikutnya{" "}
+              {sync.next ? formatDateTimeLong(sync.next) : "—"}
+            </p>
+          </div>
+          <Button
+            onClick={syncNow}
+            loading={syncing}
+            disabled={sync.inProgress}
+            className="shrink-0"
+          >
+            {sync.inProgress ? "Sinkronisasi berjalan…" : sync.syncLabel}
+          </Button>
+        </section>
       )}
     </Card>
   );
@@ -219,7 +287,10 @@ function UrlForm<P extends ApiPreview>({
   const [preview, setPreview] = useState<P | null>(null);
   const [busy, setBusy] = useState<"test" | "save" | "reset" | null>(null);
 
-  const fieldError = (err: unknown) => (err instanceof ApiError && err.isValidation ? (err.field("url") ?? err.message) : errorMessage(err));
+  const fieldError = (err: unknown) =>
+    err instanceof ApiError && err.isValidation
+      ? (err.field("url") ?? err.message)
+      : errorMessage(err);
 
   const test = async () => {
     if (!url.trim()) {
@@ -293,13 +364,28 @@ function UrlForm<P extends ApiPreview>({
         ))}
 
       <div className="flex flex-wrap gap-2">
-        <Button type="button" variant="secondary" onClick={test} loading={busy === "test"} disabled={busy !== null && busy !== "test"}>
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={test}
+          loading={busy === "test"}
+          disabled={busy !== null && busy !== "test"}
+        >
           Tes URL
         </Button>
-        <Button type="submit" loading={busy === "save"} disabled={busy !== null && busy !== "save"}>
+        <Button
+          type="submit"
+          loading={busy === "save"}
+          disabled={busy !== null && busy !== "save"}
+        >
           Simpan
         </Button>
-        <Button type="button" variant="ghost" onClick={onDone} disabled={busy !== null}>
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={onDone}
+          disabled={busy !== null}
+        >
           Batal
         </Button>
         {!isDefault && (

@@ -3,7 +3,6 @@
 namespace App\Services;
 
 use App\Enums\SyncStatus;
-use App\Jobs\SyncKciSchedulesJob;
 use App\Models\Schedule;
 use App\Models\Setting;
 use App\Models\Station;
@@ -147,29 +146,10 @@ class ScheduleSyncService
     }
 
     /**
-     * Queues a sync requested from the admin panel. Returns null when a sync
-     * is already queued or running.
-     */
-    public function queueManualSync(User $admin, ?CarbonInterface $serviceDate = null): ?SyncLog
-    {
-        return Cache::lock(self::LOCK.':queue', 10)->block(5, function () use ($admin, $serviceDate) {
-            if (SyncLog::inProgress(SyncLog::TYPE_KCI_SCHEDULES)->exists()) {
-                return null;
-            }
-
-            $log = $this->createLog('manual', $admin->id);
-            $date = ($serviceDate ?? now())->toDateString();
-            $log->update(['meta' => [...($log->meta ?? []), 'from' => $date]]);
-            SyncKciSchedulesJob::dispatch($log->id, $date);
-
-            return $log;
-        });
-    }
-
-    /**
      * @param  list<string>|null  $stationCodes  Only sync these station codes; null = KCI_SYNC_STATIONS (empty = all).
+     * @param  (callable(string $phase, int $done, int $total): void)|null  $progress  phase is "schedules" or "stops"
      */
-    public function run(SyncLog $log, ?CarbonInterface $from = null, ?int $days = null, ?array $stationCodes = null): SyncLog
+    public function run(SyncLog $log, ?CarbonInterface $from = null, ?int $days = null, ?array $stationCodes = null, ?callable $progress = null): SyncLog
     {
         $lock = Cache::lock(self::LOCK, 3600);
 
@@ -200,11 +180,11 @@ class ScheduleSyncService
                 $this->stationSync->import($this->kci->getStations());
             }
 
-            [$records, $stations, $failures] = $this->syncSchedules($dates, $only, $url);
+            [$records, $stations, $failures] = $this->syncSchedules($dates, $only, $url, $progress);
             $this->refreshLineColors();
 
             // Stops per train (for "to station" search). Only for real KCI train numbers.
-            $stops = $url !== '' ? $this->trainStops->sync($this->syncedTrainNumbers($from, $only), $from) : null;
+            $stops = $url !== '' ? $this->trainStops->sync($this->syncedTrainNumbers($from, $only), $from, $progress) : null;
 
             if ($url !== '') {
                 // The Schedules API only ever returns the current timetable: everything this
@@ -266,7 +246,7 @@ class ScheduleSyncService
      * @param  string  $url  Schedules API URL; empty = use the KCI client
      * @return array{int, int, array<string, string>}
      */
-    private function syncSchedules(Collection $dates, array $only = [], string $url = ''): array
+    private function syncSchedules(Collection $dates, array $only = [], string $url = '', ?callable $progress = null): array
     {
         $client = $this->kci->client();
         $delay = ($url !== '' || $client->name() === 'http') ? config('kci.request_delay_ms') * 1000 : 0;
@@ -280,7 +260,11 @@ class ScheduleSyncService
             ->orderBy('code')
             ->get();
 
+        $done = 0;
+
         foreach ($stations as $station) {
+            $progress && $progress('schedules', $done++, $stations->count());
+
             try {
                 $shared = null;
 
@@ -308,13 +292,15 @@ class ScheduleSyncService
             }
         }
 
+        $progress && $progress('schedules', $stations->count(), $stations->count());
+
         return [$records, $succeeded, $failures];
     }
 
     /**
      * @param  Collection<int, KciSchedule>  $schedules
      */
-    private function persist(Station $station, CarbonInterface $date, Collection $schedules): int
+    public function persist(Station $station, CarbonInterface $date, Collection $schedules): int
     {
         $serviceDate = $date->toDateString();
         $now = now();
@@ -406,7 +392,7 @@ class ScheduleSyncService
      * A line's colour is the one most of its trains use (KCI colours are per
      * train, so a single odd train must not recolour the whole line).
      */
-    private function refreshLineColors(): void
+    public function refreshLineColors(): void
     {
         $dominant = Schedule::query()
             ->whereNotNull('train_line_id')

@@ -55,7 +55,7 @@ export default function AdminSchedulesPage({
         description="Data jadwal hasil sinkronisasi yang tersimpan di database."
       />
 
-      <ScheduleSyncStatus onSynced={reload} />
+      <ScheduleSyncStatus />
 
       <div className="mb-4 grid gap-4 sm:grid-cols-3">
         <SelectField

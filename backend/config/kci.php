@@ -95,22 +95,19 @@ return [
     // Schedules older than this many days are pruned after each sync.
     'retention_days' => (int) env('KCI_RETENTION_DAYS', 7),
 
-    // Daily schedule sync times (application timezone, comma-separated HH:MM) and
-    // which service day they store: 0 = the current day. The 00:00 run already
-    // belongs to the new service day; the 04:00 run refreshes it before the
-    // first trains leave.
-    'sync_times' => array_values(array_filter(array_map('trim', explode(',', (string) env('KCI_SYNC_TIMES', '00:00,04:00'))))),
-    'sync_day_offset' => (int) env('KCI_SYNC_DAY_OFFSET', 0),
-
     // Timetable watcher: fingerprints KCI's current timetable to learn when KCI
     // publishes a new one (see Admin -> Sinkronisasi).
     'watch_station' => env('KCI_WATCH_STATION'),
     'watch_every_minutes' => (int) env('KCI_WATCH_EVERY_MINUTES', 15),
     'watch_retention_days' => (int) env('KCI_WATCH_RETENTION_DAYS', 30),
 
-    // Monthly station sync: day of month (1-28) and time.
-    'station_sync_day' => (int) env('KCI_STATION_SYNC_DAY', 1),
-    'station_sync_time' => env('KCI_STATION_SYNC_TIME', '01:00'),
+    // Local -> production push. The production server cannot reach KCI, so the
+    // local machine fetches the data and pushes it to the production API.
+    // Local: PROD_SYNC_URL (e.g. https://api-krl.inovasionline.com) + PROD_SYNC_TOKEN.
+    // Production: SYNC_INGEST_TOKEN (the same secret) switches on the receiving API.
+    'push_url' => rtrim((string) env('PROD_SYNC_URL', ''), '/'),
+    'push_token' => env('PROD_SYNC_TOKEN'),
+    'ingest_token' => env('SYNC_INGEST_TOKEN'),
 
     // A queued/running sync older than this is treated as stale (crashed worker).
     'stale_after_minutes' => (int) env('KCI_SYNC_STALE_MINUTES', 30),

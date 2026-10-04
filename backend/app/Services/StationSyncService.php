@@ -3,7 +3,6 @@
 namespace App\Services;
 
 use App\Enums\SyncStatus;
-use App\Jobs\SyncKciStationsJob;
 use App\Models\Setting;
 use App\Models\Station;
 use App\Models\SyncLog;
@@ -106,23 +105,6 @@ class StationSyncService
         } catch (KciApiException $e) {
             return ['ok' => false, 'url' => $url, 'count' => 0, 'sample' => [], 'error' => $e->getMessage()];
         }
-    }
-
-    /**
-     * Returns null when a station sync is already queued or running.
-     */
-    public function queueManualSync(User $admin): ?SyncLog
-    {
-        return Cache::lock(self::LOCK.':queue', 10)->block(5, function () use ($admin) {
-            if (SyncLog::inProgress(SyncLog::TYPE_KCI_STATIONS)->exists()) {
-                return null;
-            }
-
-            $log = $this->createLog('manual', $admin->id);
-            SyncKciStationsJob::dispatch($log->id);
-
-            return $log;
-        });
     }
 
     public function run(SyncLog $log): SyncLog

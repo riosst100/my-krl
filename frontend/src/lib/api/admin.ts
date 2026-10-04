@@ -47,7 +47,6 @@ export interface AdminStationsMeta {
   last_station_sync: SyncLog | null;
   last_successful_station_sync: SyncLog | null;
   station_sync_in_progress: boolean;
-  next_station_sync: string;
 }
 
 export function getAdminStations(params: { search?: string; status?: "" | "active" | "inactive"; page?: number; per_page?: number }) {
@@ -106,12 +105,6 @@ export async function testStationsApiUrl(url: string): Promise<StationsApiPrevie
   return (await apiFetch<{ data: StationsApiPreview }>("/admin/settings/stations-api/test", { method: "POST", body: { url } })).data;
 }
 
-/** Queue a station-list sync from KCI (normally runs monthly). */
-export async function triggerStationSync(): Promise<SyncLog> {
-  const res = await apiFetch<{ data: SyncLog }>("/admin/stations/sync", { method: "POST" });
-  return res.data;
-}
-
 // --- Schedules -------------------------------------------------------------------
 
 export function getAdminSchedules(filters: ScheduleFilters) {
@@ -121,15 +114,17 @@ export function getAdminSchedules(filters: ScheduleFilters) {
 // --- Sync ------------------------------------------------------------------------
 
 export interface SyncLogsMeta {
+  /** local = can push to prod; prod = only receives data from local. */
+  mode: "local" | "prod";
+  /** Host of the production API (local mode). */
+  push_target: string | null;
   in_progress: boolean;
-  last_schedule_sync: SyncLog | null;
-  last_successful_schedule_sync: SyncLog | null;
-  next_schedule_sync: string;
-  /** Which service day the scheduled run stores (1 = tomorrow). */
-  schedule_sync_day_offset: number;
+  /** Local: the last push to prod. Prod: the last data received from local. */
+  last_sync: SyncLog | null;
+  last_successful_sync: SyncLog | null;
 }
 
-export function getSyncLogs(page = 1, type: "" | "schedules" | "stations" = "") {
+export function getSyncLogs(page = 1, type: "" | "schedules" | "stations" | "push" = "") {
   return apiFetch<Paginated<SyncLog, SyncLogsMeta>>("/admin/sync-logs", { query: { page, type } });
 }
 
@@ -206,10 +201,30 @@ export async function testSchedulesApiUrl(url: string, station?: string): Promis
   ).data;
 }
 
-/** Queue a schedule sync for today (0) or tomorrow (1). */
-export async function triggerSync(dayOffset: 0 | 1 = 0): Promise<SyncLog> {
-  const res = await apiFetch<{ data: SyncLog }>("/admin/sync", { method: "POST", body: { day_offset: dayOffset } });
+/**
+ * "Sync Data to Prod": fetch from KCI locally and push to production (runs in the background).
+ * `fetch: false` sends the data already in the local database (e.g. after a manual JSON import).
+ */
+export async function triggerPushToProd(fetch = true): Promise<SyncLog> {
+  const res = await apiFetch<{ data: SyncLog }>("/admin/sync/prod", { method: "POST", body: { fetch } });
   return res.data;
+}
+
+export type ImportType = "schedules" | "train_stops" | "stations";
+
+export interface ImportInput {
+  type: ImportType;
+  /** Station code (schedules only). */
+  station?: string;
+  /** Train number (train stops; optional when the rows carry "train_id"). */
+  train?: string;
+  /** The pasted KCI API response. */
+  json: string;
+}
+
+/** Manual import of a pasted KCI API response (no KCI access needed). */
+export async function importKciJson(input: ImportInput): Promise<{ type: ImportType; records: number; message: string }> {
+  return (await apiFetch<{ data: { type: ImportType; records: number; message: string } }>("/admin/sync/import", { method: "POST", body: input })).data;
 }
 
 // --- Stations whose schedules are synced -----------------------------------------

@@ -8,12 +8,17 @@ use App\Http\Resources\SyncLogResource;
 use App\Models\KciTimetableCheck;
 use App\Models\SyncLog;
 use App\Services\KciTimetableWatchService;
-use App\Services\ScheduleSyncService;
+use App\Jobs\PushToProdJob;
+use App\Models\Station;
+use App\Services\Kci\Exceptions\KciApiException;
+use App\Services\ManualImportService;
+use App\Services\ProdPushService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Response;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 
 class SyncController extends Controller
 {
@@ -21,12 +26,13 @@ class SyncController extends Controller
     {
         $request->validate([
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:100'],
-            'type' => ['sometimes', 'nullable', 'in:schedules,stations'],
+            'type' => ['sometimes', 'nullable', 'in:schedules,stations,push'],
         ]);
 
         $type = match ($request->input('type')) {
             'schedules' => SyncLog::TYPE_KCI_SCHEDULES,
             'stations' => SyncLog::TYPE_KCI_STATIONS,
+            'push' => SyncLog::TYPE_PROD_PUSH,
             default => null,
         };
 
@@ -35,20 +41,25 @@ class SyncController extends Controller
             ->latest('id')
             ->paginate($request->integer('per_page', 20));
 
-        $last = SyncLog::with('triggeredBy')->where('type', SyncLog::TYPE_KCI_SCHEDULES)->latest('id')->first();
-        $lastSuccess = SyncLog::where('type', SyncLog::TYPE_KCI_SCHEDULES)
-            ->whereIn('status', [SyncStatus::Success, SyncStatus::Partial])
-            ->latest('finished_at')
-            ->first();
+        // "The sync": on the local machine the push to prod, on the server the data received from local.
+        $local = ProdPushService::configured();
+        $syncs = fn () => SyncLog::query()->when(
+            $local,
+            fn ($q) => $q->where('type', SyncLog::TYPE_PROD_PUSH),
+            fn ($q) => $q->where('type', SyncLog::TYPE_KCI_SCHEDULES)->where('trigger', 'ingest'),
+        );
+        $last = $syncs()->with('triggeredBy')->latest('id')->first();
+        $lastSuccess = $syncs()->whereIn('status', [SyncStatus::Success, SyncStatus::Partial])->latest('finished_at')->first();
 
         return SyncLogResource::collection($logs)->additional([
             'meta' => [
-                'in_progress' => SyncLog::inProgress(SyncLog::TYPE_KCI_SCHEDULES)->exists(),
-                'last_schedule_sync' => $last ? new SyncLogResource($last) : null,
-                'last_successful_schedule_sync' => $lastSuccess ? new SyncLogResource($lastSuccess) : null,
-                'next_schedule_sync' => $this->nextDailyRun()->toIso8601String(),
-                // Which service day the scheduled run stores (1 = tomorrow).
-                'schedule_sync_day_offset' => (int) config('kci.sync_day_offset'),
+                // local = can push to prod (PROD_SYNC_URL + PROD_SYNC_TOKEN set); prod = only receives.
+                'mode' => $local ? 'local' : 'prod',
+                'push_target' => ProdPushService::targetHost(),
+                'in_progress' => $syncs()->whereIn('status', [SyncStatus::Queued, SyncStatus::Running])
+                    ->where('created_at', '>=', now()->subMinutes(config('kci.stale_after_minutes')))->exists(),
+                'last_sync' => $last ? new SyncLogResource($last) : null,
+                'last_successful_sync' => $lastSuccess ? new SyncLogResource($lastSuccess) : null,
             ],
         ]);
     }
@@ -85,27 +96,30 @@ class SyncController extends Controller
         ]]);
     }
 
-    private function nextDailyRun(): Carbon
-    {
-        $runs = collect(config('kci.sync_times'))->map(function (string $time) {
-            [$hour, $minute] = array_map('intval', explode(':', $time));
-            $run = now()->setTime($hour, $minute);
-
-            return $run->isPast() ? $run->addDay() : $run;
-        });
-
-        return $runs->sort()->first() ?? now()->addDay()->startOfDay();
-    }
-
     /**
-     * Queues a sync; the queue worker runs it in the background.
+     * POST /admin/sync/prod — "Sync Data to Prod": fetch from KCI locally and push to production.
+     * The queue worker runs it in the background; progress is on the sync log.
      */
-    public function store(Request $request, ScheduleSyncService $sync): JsonResponse
+    public function push(Request $request, ProdPushService $push): JsonResponse
     {
-        // 0 = today, 1 = tomorrow.
-        $validated = $request->validate(['day_offset' => ['sometimes', 'integer', 'in:0,1']]);
+        // fetch=false: send the data already in the local database (e.g. after a manual JSON import).
+        $validated = $request->validate(['fetch' => ['sometimes', 'boolean']]);
+        $fetch = (bool) ($validated['fetch'] ?? true);
 
-        $log = $sync->queueManualSync($request->user(), now()->addDays((int) ($validated['day_offset'] ?? 0)));
+        if (! ProdPushService::configured()) {
+            return response()->json(['message' => 'Server ini tidak dikonfigurasi untuk mengirim data (PROD_SYNC_URL dan PROD_SYNC_TOKEN belum diatur).'], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        $log = Cache::lock('prod-push:queue', 10)->block(5, function () use ($request, $push, $fetch) {
+            if (SyncLog::inProgress(SyncLog::TYPE_PROD_PUSH)->exists()) {
+                return null;
+            }
+
+            $log = $push->createLog($request->user()->id, fetch: $fetch);
+            PushToProdJob::dispatch($log->id);
+
+            return $log;
+        });
 
         if (! $log) {
             return response()->json(['message' => 'A synchronization is already in progress.'], Response::HTTP_CONFLICT);
@@ -114,5 +128,45 @@ class SyncController extends Controller
         return (new SyncLogResource($log->refresh()->load('triggeredBy')))
             ->response()
             ->setStatusCode(Response::HTTP_ACCEPTED);
+    }
+
+    /**
+     * POST /admin/sync/import — manual import of a pasted KCI API response (JSON).
+     */
+    public function import(Request $request, ManualImportService $import): JsonResponse
+    {
+        $validated = $request->validate([
+            'type' => ['required', 'in:schedules,train_stops,stations'],
+            'station' => ['required_if:type,schedules', 'nullable', 'string', 'max:10'],
+            'train' => ['nullable', 'string', 'alpha_num', 'max:20'],
+            'json' => ['required', 'string', 'max:8000000'],
+        ], [
+            'station.required_if' => 'Pilih stasiun untuk jadwal ini.',
+            'json.required' => 'Tempel JSON dari response API KCI.',
+        ]);
+
+        $payload = json_decode($validated['json'], true);
+
+        if (! is_array($payload)) {
+            return response()->json(['message' => 'JSON tidak valid.', 'errors' => ['json' => ['JSON tidak valid: '.json_last_error_msg().'.']]], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        try {
+            $result = match ($validated['type']) {
+                'schedules' => $import->schedules($payload, $this->activeStation((string) $validated['station']), $request->user()->id),
+                'train_stops' => $import->trainStops($payload, $validated['train'] ?? null),
+                'stations' => $import->stations($payload, $request->user()->id),
+            };
+        } catch (KciApiException $e) {
+            return response()->json(['message' => 'Data tidak dapat dibaca.', 'errors' => ['json' => [$e->getMessage()]]], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        return response()->json(['data' => ['type' => $validated['type'], ...$result]]);
+    }
+
+    private function activeStation(string $code): Station
+    {
+        return Station::active()->where('code', strtoupper($code))->first()
+            ?? abort(Response::HTTP_UNPROCESSABLE_ENTITY, 'Stasiun tidak ditemukan atau tidak aktif.');
     }
 }

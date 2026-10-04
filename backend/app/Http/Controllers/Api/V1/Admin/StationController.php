@@ -10,7 +10,6 @@ use App\Http\Resources\SyncLogResource;
 use App\Models\Station;
 use App\Models\SyncLog;
 use App\Services\AdminStationService;
-use App\Services\StationSyncService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -46,7 +45,6 @@ class StationController extends Controller
                 'last_station_sync' => $lastSync ? new SyncLogResource($lastSync) : null,
                 'last_successful_station_sync' => $lastSuccess ? new SyncLogResource($lastSuccess) : null,
                 'station_sync_in_progress' => SyncLog::inProgress(SyncLog::TYPE_KCI_STATIONS)->exists(),
-                'next_station_sync' => $this->nextMonthlyRun()->toIso8601String(),
             ],
         ]);
     }
@@ -66,29 +64,5 @@ class StationController extends Controller
         $station->update($request->validated());
 
         return new StationResource($station);
-    }
-
-    /**
-     * POST /admin/stations/sync — queue a station-list sync now.
-     */
-    public function sync(Request $request, StationSyncService $sync): JsonResponse
-    {
-        $log = $sync->queueManualSync($request->user());
-
-        if (! $log) {
-            return response()->json(['message' => 'A station synchronization is already in progress.'], Response::HTTP_CONFLICT);
-        }
-
-        return (new SyncLogResource($log->refresh()->load('triggeredBy')))
-            ->response()
-            ->setStatusCode(Response::HTTP_ACCEPTED);
-    }
-
-    private function nextMonthlyRun(): Carbon
-    {
-        [$hour, $minute] = array_map('intval', explode(':', config('kci.station_sync_time')));
-        $run = now()->startOfMonth()->day(config('kci.station_sync_day'))->setTime($hour, $minute);
-
-        return $run->isPast() ? $run->addMonthNoOverflow() : $run;
     }
 }

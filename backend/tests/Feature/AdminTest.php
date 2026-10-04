@@ -104,27 +104,13 @@ class AdminTest extends TestCase
         $this->getJson('/api/v1/stations')->assertOk()->assertJsonCount(0, 'data');
     }
 
-    public function test_admin_can_trigger_sync(): void
+    public function test_there_is_no_manual_kci_sync_endpoint_any_more(): void
     {
         $admin = User::factory()->admin()->create();
-        $this->app->bind(\App\Services\Kci\Contracts\KciClient::class, fn () => new \Tests\Support\FakeKciClient);
 
-        $this->actingAs($admin, 'admin')->fromFrontend()
-            ->postJson('/api/v1/admin/sync')
-            ->assertAccepted()
-            ->assertJsonPath('data.trigger', 'manual');
-
-        // QUEUE_CONNECTION=sync in tests, so the job already ran.
-        $log = SyncLog::latest('id')->first();
-        $this->assertSame('success', $log->status->value);
-        $this->assertSame($admin->id, $log->triggered_by);
-        $this->assertSame(now()->toDateString(), $log->meta['from']);
-
-        // Manual sync for tomorrow.
-        $this->fromFrontend()->postJson('/api/v1/admin/sync', ['day_offset' => 1])->assertAccepted();
-        $this->assertSame(now()->addDay()->toDateString(), SyncLog::latest('id')->first()->meta['from']);
-        $this->assertTrue(\App\Models\Schedule::whereDate('service_date', now()->addDay()->toDateString())->exists());
-
-        $this->fromFrontend()->postJson('/api/v1/admin/sync', ['day_offset' => 5])->assertUnprocessable();
+        // The server cannot reach KCI: data only arrives through the push from the local machine.
+        $this->actingAs($admin, 'admin')->fromFrontend();
+        $this->postJson('/api/v1/admin/sync')->assertNotFound();
+        $this->postJson('/api/v1/admin/stations/sync')->assertNotFound();
     }
 }

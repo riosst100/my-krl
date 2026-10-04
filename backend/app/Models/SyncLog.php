@@ -18,6 +18,9 @@ class SyncLog extends Model
 
     public const TYPE_KCI_STATIONS = 'kci_stations';
 
+    /** Local -> production push (runs on the local machine). */
+    public const TYPE_PROD_PUSH = 'prod_push';
+
     protected function casts(): array
     {
         return [

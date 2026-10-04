@@ -7,12 +7,28 @@ import { cx, Spinner } from "@/components/ui";
 import { useToast } from "@/components/ui/Toast";
 import { useAdminAuth } from "@/lib/auth/AdminAuthProvider";
 
-const NAV = [
+interface NavItem {
+  href: string;
+  label: string;
+  /** Sub menu: shown under the item while its section is open. */
+  children?: { href: string; label: string }[];
+}
+
+const NAV: NavItem[] = [
   { href: "/admin/dashboard", label: "Dashboard" },
   { href: "/admin/users", label: "Pengguna" },
   { href: "/admin/stations", label: "Stasiun" },
   { href: "/admin/schedules", label: "Jadwal" },
-  { href: "/admin/sync", label: "Sinkronisasi" },
+  {
+    href: "/admin/sync",
+    label: "Sinkronisasi",
+    children: [
+      { href: "/admin/sync", label: "Sync ke Prod" },
+      { href: "/admin/sync/import", label: "Import Manual" },
+      { href: "/admin/sync/sumber", label: "Sumber Data" },
+      { href: "/admin/sync/riwayat", label: "Riwayat" },
+    ],
+  },
 ];
 
 /**
@@ -57,24 +73,54 @@ export default function AdminPanelLayout({ children }: LayoutProps<"/admin">) {
     router.replace("/admin/login");
   };
 
+  const itemClass = (active: boolean, sub = false) =>
+    cx(
+      "flex items-center rounded-lg text-sm transition-colors",
+      sub
+        ? "min-h-10 px-3 lg:min-h-9"
+        : "min-h-11 px-3 font-medium lg:min-h-10",
+      active ? "bg-white/10 text-white" : "hover:bg-white/5 hover:text-white",
+    );
+
   const navLinks = (
     <ul className="space-y-1">
       {NAV.map((item) => {
-        const active = pathname.startsWith(item.href);
+        const open = pathname.startsWith(item.href);
         return (
           <li key={item.href}>
             <Link
-              href={item.href}
-              aria-current={active ? "page" : undefined}
+              href={item.children ? item.children[0].href : item.href}
+              aria-current={open && !item.children ? "page" : undefined}
+              aria-expanded={item.children ? open : undefined}
               className={cx(
-                "flex min-h-11 items-center rounded-lg px-3 text-sm font-medium transition-colors lg:min-h-10",
-                active
-                  ? "bg-white/10 text-white"
-                  : "hover:bg-white/5 hover:text-white",
+                itemClass(open && !item.children),
+                open && item.children && "text-white",
               )}
             >
               {item.label}
             </Link>
+            {item.children && open && (
+              <ul className="ml-3 mt-1 space-y-0.5 border-l border-white/10 pl-2">
+                {item.children.map((child) => {
+                  // "/admin/sync" is the section's first page: only an exact match.
+                  const active =
+                    child.href === item.href
+                      ? pathname === child.href
+                      : pathname.startsWith(child.href);
+                  return (
+                    <li key={child.href}>
+                      <Link
+                        href={child.href}
+                        aria-current={active ? "page" : undefined}
+                        className={itemClass(active, true)}
+                      >
+                        {child.label}
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </li>
         );
       })}

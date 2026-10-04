@@ -55,9 +55,10 @@ class TrainStopSyncService
      * Trains whose stops are already stored for that date are skipped.
      *
      * @param  Collection<int, string>  $trainNumbers
+     * @param  (callable(string $phase, int $done, int $total): void)|null  $progress  called as ("stops", done, total)
      * @return array{trains: int, fetched: int, skipped: int, stops: int, failed: array<string, string>}
      */
-    public function sync(Collection $trainNumbers, CarbonInterface $date): array
+    public function sync(Collection $trainNumbers, CarbonInterface $date, ?callable $progress = null): array
     {
         $result = ['trains' => 0, 'fetched' => 0, 'skipped' => 0, 'stops' => 0, 'failed' => []];
         $url = $this->apiUrl();
@@ -77,6 +78,8 @@ class TrainStopSyncService
 
         $pending = $trainNumbers->reject(fn (string $train) => $known->has($train))->values();
         $result['skipped'] = $trainNumbers->count() - $pending->count();
+        $total = $pending->count();
+        $progress && $progress('stops', 0, $total);
 
         // The upstream answers slowly (several seconds per train): fetch in
         // small parallel batches, then retry failures once, one at a time.
@@ -103,6 +106,8 @@ class TrainStopSyncService
                     $result['failed'][$train] = $e->getMessage();
                     Log::warning('KCI train stops failed', ['train' => $train, 'error' => $e->getMessage()]);
                 }
+
+                $progress && $progress('stops', $result['fetched'] + count($result['failed']), $total);
             }
 
             // Stop early when the source is clearly unavailable (e.g. blocked).
@@ -160,7 +165,7 @@ class TrainStopSyncService
      * @param  list<array{station_code: string, time: string, is_transit: bool}>  $stops
      * @param  Collection<string, int>  $stationIds
      */
-    private function store(string $serviceDate, string $train, array $stops, Collection $stationIds): int
+    public function store(string $serviceDate, string $train, array $stops, Collection $stationIds): int
     {
         $now = now();
         $rows = array_map(fn (array $stop, int $i) => [

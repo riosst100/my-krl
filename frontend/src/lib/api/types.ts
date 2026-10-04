@@ -98,13 +98,22 @@ export interface Paginated<T, M = object> {
 
 export type SyncStatus = "queued" | "running" | "success" | "partial" | "failed";
 
-export type SyncType = "kci_schedules" | "kci_stations";
+export type SyncType = "kci_schedules" | "kci_stations" | "prod_push";
+
+export interface SyncProgress {
+  phase: "fetch_schedules" | "fetch_stops" | "stations" | "push_schedules" | "push_stops";
+  label: string;
+  done: number;
+  total: number;
+  percent: number;
+  detail: string | null;
+}
 
 export interface SyncLog {
   id: number;
   type: SyncType;
   status: SyncStatus;
-  trigger: "schedule" | "manual" | "console";
+  trigger: "schedule" | "manual" | "console" | "ingest" | "push" | "import";
   source: string | null;
   triggered_by: Pick<User, "id" | "name" | "email"> | null;
   records_processed: number;
@@ -121,6 +130,14 @@ export interface SyncLog {
     updated?: number;
     unchanged?: number;
     missing_from_kci?: string[];
+    /** Sync to prod: host that received the data. */
+    target?: string;
+    run_id?: number;
+    /** Sync to prod: false = the local data was sent without fetching from KCI first. */
+    fetch?: boolean;
+    trains?: number;
+    stops?: number;
+    progress?: SyncProgress;
     train_stops?: { trains: number; fetched: number; skipped: number; stops: number; failed: number } | null;
   } | null;
   started_at: string | null;

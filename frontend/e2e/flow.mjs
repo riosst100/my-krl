@@ -196,7 +196,6 @@ try {
   await page.getByRole("button", { name: "Masuk" }).click();
   await page.waitForURL("**/admin/dashboard");
   await page.getByText("Total Pengguna").waitFor();
-  await page.getByText(/^(Berhasil|Sebagian|Gagal|Berjalan|Antre)$/).first().waitFor(); // status of the last sync, whatever it is
   await page.screenshot({ path: `${SHOTS}/admin-dashboard.png` });
   step("admin login → dashboard");
 
@@ -226,25 +225,12 @@ try {
   await page.getByRole("link", { name: "← Semua stasiun" }).click();
   await page.waitForURL("**/admin/stations");
 
-  // Stations API URL: open the editor and dry-run the current URL (no save).
-  await page.getByRole("button", { name: "Ubah URL" }).click();
-  await page.getByRole("button", { name: "Tes URL" }).click();
-  await page.getByText(/URL dapat dibaca|URL tidak dapat dipakai/).waitFor({ timeout: 60_000 });
-  const testResult = (await page.getByText(/URL dapat dibaca|URL tidak dapat dipakai/).innerText()).trim();
-  await page.getByRole("button", { name: "Batal" }).click();
-  step(`stations API URL test → "${testResult}"`);
-
-  await page.getByRole("button", { name: "Sync Stasiun Sekarang" }).click();
-  await page.getByText("Sinkronisasi data stasiun dimulai").waitFor();
-  await page.getByRole("button", { name: "Sinkronisasi berjalan…" }).waitFor();
-  await page.getByRole("button", { name: "Sync Stasiun Sekarang", disabled: false }).waitFor({ timeout: 60_000 });
-  const panel = page.locator("section", { has: page.getByRole("heading", { name: "Terakhir sync" }) });
-  await panel.getByText("Berhasil", { exact: true }).waitFor();
-  await panel.getByText("Manual oleh").waitFor();
-  const lastSync = (await panel.locator("time").innerText()).trim();
-  if (!lastSync.endsWith("WIB")) throw new Error(`last sync time not shown: "${lastSync}"`);
+  // Stations: the list only (the source settings live under Sinkronisasi → Sumber Data).
+  await page.getByRole("link", { name: "Stasiun", exact: true }).click();
+  await page.waitForURL("**/admin/stations");
+  await page.getByRole("cell", { name: STATION, exact: true }).first().waitFor();
   await page.screenshot({ path: `${SHOTS}/admin-stations.png` });
-  step(`manual station sync → terakhir sync ${lastSync}`);
+  step("admin stations list");
 
   await page.getByRole("link", { name: "Jadwal" }).click();
   await page.waitForURL("**/admin/schedules");
@@ -253,11 +239,20 @@ try {
   await page.getByRole("cell", { name: trainNumber, exact: true }).first().waitFor();
   step("admin schedule filter");
 
-  await page.getByRole("link", { name: "Sinkronisasi" }).click();
+  // Sinkronisasi is a section with sub menus.
+  await page.getByRole("link", { name: "Sinkronisasi", exact: true }).click();
   await page.waitForURL("**/admin/sync");
+  const submenu = page.getByRole("navigation", { name: "Navigasi admin" });
+  for (const label of ["Sync ke Prod", "Import Manual", "Sumber Data", "Riwayat"]) await submenu.getByRole("link", { name: label }).waitFor();
+  await page.getByRole("heading", { level: 1, name: "Sync ke Prod" }).waitFor();
+  await page.getByRole("button", { name: "Sync Data to Prod" }).or(page.getByText("Data dari lokal")).first().waitFor();
+  await page.screenshot({ path: `${SHOTS}/admin-sync.png` });
+  step("sync page: Sync ke Prod");
 
-  // Schedules API URL and Train Stops API URL: dry-run each (no save).
-  for (const title of ["Sumber data jadwal", "Pemberhentian kereta"]) {
+  // Sumber Data: dry-run each API URL (no save).
+  await submenu.getByRole("link", { name: "Sumber Data" }).click();
+  await page.waitForURL("**/admin/sync/sumber");
+  for (const title of ["Sumber data stasiun", "Sumber data jadwal", "Pemberhentian kereta"]) {
     const card = page.locator("section", { has: page.getByRole("heading", { name: new RegExp(`^${title}`) }) });
     await card.getByRole("button", { name: "Ubah URL" }).click();
     await card.getByRole("button", { name: "Tes URL" }).click();
@@ -268,16 +263,22 @@ try {
     await card.getByRole("button", { name: "Batal" }).click();
     step(`${title} URL test → "${text}"`);
   }
-  await page.getByRole("button", { name: "Sync KCI Data Now" }).click();
-  await page.getByText("Sinkronisasi dimulai").waitFor();
-  await page.getByRole("button", { name: "Sinkronisasi berjalan…" }).waitFor();
-  // Finished when the button is enabled again and the newest history row is a successful manual run.
-  await page.getByRole("button", { name: "Sync KCI Data Now", disabled: false }).waitFor({ timeout: 180_000 });
-  const firstRow = page.locator("table tbody tr").first();
-  await firstRow.getByText("Manual").waitFor();
-  await firstRow.getByText("Berhasil").waitFor();
-  await page.screenshot({ path: `${SHOTS}/admin-sync.png` });
-  step("manual sync triggered and finished");
+
+  // Import Manual: the KCI link appears once a station is chosen; bad JSON is explained.
+  await submenu.getByRole("link", { name: "Import Manual" }).click();
+  await page.waitForURL("**/admin/sync/import");
+  await page.getByLabel("Stasiun", { exact: true }).selectOption(STATION);
+  await page.getByRole("link", { name: /stationid=/ }).first().waitFor();
+  await page.getByLabel(/Tempel JSON hasilnya/).fill("{not json");
+  await page.getByRole("button", { name: "Import data" }).click();
+  await page.getByText(/JSON tidak valid/).waitFor();
+  step("import manual: link to the KCI URL, invalid JSON explained");
+
+  // Riwayat
+  await submenu.getByRole("link", { name: "Riwayat" }).click();
+  await page.waitForURL("**/admin/sync/riwayat");
+  await page.getByRole("heading", { level: 1, name: "Riwayat Sinkronisasi" }).waitFor();
+  step("sync history page");
 
   // Admin session is independent from the website session
   await page.goto(`${BASE}/account`);
