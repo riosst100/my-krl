@@ -7,7 +7,12 @@ import { Card, cx, EmptyState, ErrorState, Skeleton } from "@/components/ui";
 import { errorMessage } from "@/lib/api/client";
 import { getStationSchedules } from "@/lib/api/schedules";
 import type { Schedule } from "@/lib/api/types";
-import { formatDateLong, formatDateTime, secondsUntil } from "@/lib/format";
+import {
+  DEPARTED_GRACE_SECONDS,
+  formatDateLong,
+  formatDateTime,
+  secondsUntil,
+} from "@/lib/format";
 import { useApi } from "@/lib/hooks/useApi";
 import { useJakartaClock } from "@/lib/hooks/useJakartaClock";
 
@@ -15,6 +20,55 @@ interface Props {
   stationCode: string;
   /** Destination station code: only trains that stop there (after this station). */
   to?: string;
+}
+
+type Status = "upcoming" | "transit" | "past";
+
+const TABS: { id: Status; label: string }[] = [
+  { id: "upcoming", label: "Akan Datang" },
+  { id: "transit", label: "Dalam Perjalanan" },
+  { id: "past", label: "Selesai" },
+];
+
+const EMPTY: Record<Status, { title: string; description: string }> = {
+  upcoming: {
+    title: "Tidak ada kereta yang akan datang",
+    description:
+      "Jadwal KRL selesai sampai jam 12 malam. Kereta mulai berangkat lagi pukul 04:00 WIB.",
+  },
+  transit: {
+    title: "Tidak ada kereta dalam perjalanan",
+    description: "Saat ini tidak ada kereta yang sedang menuju tujuan.",
+  },
+  past: {
+    title: "Belum ada kereta yang berlalu",
+    description: "Belum ada kereta yang sudah tiba hari ini.",
+  },
+};
+
+/**
+ * Where a train is right now: not left yet, on its way (left but not yet at
+ * the arrival station), or done (arrived, or no arrival time to wait for).
+ */
+function statusOf(
+  s: Schedule,
+  clock: { date: string; seconds: number },
+  toStation: boolean,
+): Status {
+  if (
+    secondsUntil(s.service_date, s.departure_time, clock) >
+    -DEPARTED_GRACE_SECONDS
+  )
+    return "upcoming";
+  const arrival = toStation
+    ? s.to_station_arrival_time
+    : s.destination_arrival_time;
+  if (!arrival) return "past";
+  // An arrival earlier than the departure time means it is after midnight.
+  const overnight = arrival < s.departure_time ? 86_400 : 0;
+  return secondsUntil(s.service_date, arrival, clock) + overnight > 0
+    ? "transit"
+    : "past";
 }
 
 /**
@@ -30,7 +84,7 @@ export function ScheduleBoard({ stationCode, to }: Props) {
   const date = data?.meta.date;
 
   const [destination, setDestination] = useState<string>("");
-  const [hideDeparted, setHideDeparted] = useState(true);
+  const [tab, setTab] = useState<Status>("upcoming");
   const [selected, setSelected] = useState<Schedule | null>(null);
   // Live WIB clock, updated every minute, for "next train" highlighting and its countdown.
   const live = useJakartaClock();
@@ -43,13 +97,27 @@ export function ScheduleBoard({ stationCode, to }: Props) {
 
   const isToday = !!date && clock?.today === date;
 
-  const rows = useMemo(() => {
+  const toStation = !!to;
+  const { rows, counts } = useMemo(() => {
     let list = data?.data ?? [];
     if (destination) list = list.filter((s) => s.destination === destination);
-    if (isToday && hideDeparted && clock)
-      list = list.filter((s) => s.departure_time >= clock.now);
-    return list;
-  }, [data, destination, isToday, hideDeparted, clock]);
+    const counts: Record<Status, number> = { upcoming: 0, transit: 0, past: 0 };
+    if (!isToday || !live) return { rows: list, counts };
+    const groups: Record<Status, Schedule[]> = {
+      upcoming: [],
+      transit: [],
+      past: [],
+    };
+    for (const s of list) groups[statusOf(s, live, toStation)].push(s);
+    counts.upcoming = groups.upcoming.length;
+    counts.transit = groups.transit.length;
+    counts.past = groups.past.length;
+    // Most recent first for finished trains.
+    return {
+      rows: tab === "past" ? groups.past.reverse() : groups[tab],
+      counts,
+    };
+  }, [data, destination, isToday, live, tab, toStation]);
 
   if (loading && !data) return <BoardSkeleton />;
 
@@ -112,17 +180,35 @@ export function ScheduleBoard({ stationCode, to }: Props) {
                 ))}
               </div>
             )}
-            {isToday && (
-              <label className="flex w-fit cursor-pointer items-center gap-2 text-[13px] text-slate-600 sm:ml-auto">
-                <input
-                  type="checkbox"
-                  checked={hideDeparted}
-                  onChange={(e) => setHideDeparted(e.target.checked)}
-                  className="h-4 w-4 rounded accent-brand-600"
-                />
-                Sembunyikan yang sudah berangkat
-              </label>
-            )}
+          </div>
+        )}
+
+        {isToday && meta.total_for_date > 0 && (
+          <div
+            role="tablist"
+            aria-label="Status kereta"
+            className="mt-3 grid grid-cols-3 gap-1 rounded-none bg-slate-100 p-1 sm:mt-4"
+          >
+            {TABS.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                role="tab"
+                aria-selected={tab === t.id}
+                onClick={() => setTab(t.id)}
+                className={cx(
+                  "rounded-none px-1.5 py-2 text-xs font-semibold transition-colors sm:text-[13px]",
+                  tab === t.id
+                    ? "bg-white text-brand-700 shadow-sm"
+                    : "text-slate-600 hover:text-ink",
+                )}
+              >
+                {t.label}
+                <span className="tabular ml-1 text-[11px] font-medium text-muted">
+                  {counts[t.id]}
+                </span>
+              </button>
+            ))}
           </div>
         )}
       </div>
@@ -139,23 +225,21 @@ export function ScheduleBoard({ stationCode, to }: Props) {
         />
       ) : rows.length === 0 ? (
         <EmptyState
-          title="Tidak ada kereta yang cocok"
+          title={isToday ? EMPTY[tab].title : "Tidak ada kereta yang cocok"}
           description={
-            isToday && hideDeparted
-              ? "Jadwal KRL selesai sampai jam 12 malam. Kereta mulai berangkat lagi pukul 04:00 WIB. Tampilkan semua jadwal untuk melihat jadwal hari ini."
-              : "Ubah filter arah tujuan."
+            isToday ? EMPTY[tab].description : "Ubah filter arah tujuan."
           }
         />
       ) : (
         <>
           {/* The same train cards as the homepage's favourite routes. */}
-          <ul className="p-2 sm:p-3">
+          <ul className="px-0 py-2 sm:p-3">
             {rows.map((s) => (
               <DepartureRow
                 key={s.id}
                 schedule={s}
-                fromName={meta.station.name}
-                toName={trip?.name}
+                from={meta.station}
+                to={trip}
                 secondsLeft={
                   isToday && live
                     ? secondsUntil(s.service_date, s.departure_time, live)
@@ -213,7 +297,7 @@ function Chip({
 function BoardSkeleton() {
   return (
     <div
-      className="rounded-2xl border border-line/80 bg-surface p-4 shadow-card sm:p-6"
+      className="card border border-line/80 bg-surface p-4 shadow-card sm:p-6"
       aria-busy="true"
     >
       <span className="sr-only">Memuat jadwal…</span>

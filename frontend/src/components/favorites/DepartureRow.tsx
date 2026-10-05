@@ -1,4 +1,5 @@
 import { LineDot } from "@/components/ui";
+import { useBoardedTrain, type StationRef } from "@/lib/hooks/useBoardedTrain";
 import type { Schedule } from "@/lib/api/types";
 import {
   DEPARTED_GRACE_SECONDS,
@@ -14,15 +15,15 @@ import {
  */
 export function DepartureRow({
   schedule: s,
-  fromName,
-  toName,
+  from,
+  to,
   secondsLeft,
   onOpen,
 }: {
   schedule: Schedule;
-  fromName: string;
+  from: StationRef;
   /** Chosen destination station; without it the train's final destination is used. */
-  toName?: string;
+  to?: StationRef | null;
   /** Seconds until departure; shown as a countdown badge. Under 5 minutes the row turns red. */
   secondsLeft?: number;
   onOpen: () => void;
@@ -33,15 +34,18 @@ export function DepartureRow({
     secondsLeft !== undefined &&
     secondsLeft <= URGENT_SECONDS &&
     secondsLeft > -DEPARTED_GRACE_SECONDS;
+  const toName = to?.name;
   const arrival = toName
     ? s.to_station_arrival_time
     : s.destination_arrival_time;
   const arrivalStation = toName ?? s.destination;
+  const { isBoarded, toggle } = useBoardedTrain();
+  const boarded = isBoarded(s);
 
   return (
     <li
       // Rows share the route card: the next train is tinted, the others are separated by a hairline.
-      className={`p-3 sm:p-4 ${urgent ? "rounded-xl bg-brand-100/80" : "border-t border-line first:border-t-0"}`}
+      className={`px-2 py-3 sm:p-4 ${urgent ? "rounded-none bg-brand-100/80" : "border-t border-line first:border-t-0"}`}
     >
       <div className="flex items-center justify-between gap-2">
         <p className="flex min-w-0 items-center gap-1.5 text-[11px] text-muted sm:text-xs">
@@ -69,7 +73,7 @@ export function DepartureRow({
           label="Berangkat"
           tone="depart"
           time={s.departure_time}
-          station={fromName}
+          station={from.name}
         />
         {arrival && (
           <TimeBox
@@ -88,14 +92,25 @@ export function DepartureRow({
             <span className="font-semibold text-ink">{s.destination}</span>
           </p>
         )}
-        <button
-          type="button"
-          onClick={onOpen}
-          aria-label={`Lihat perjalanan KA ${s.train_number}`}
-          className="ml-auto shrink-0 rounded-full border border-brand-600/40 bg-white px-3 py-1 text-xs font-semibold text-brand-600 transition-colors hover:bg-brand-50"
-        >
-          Lihat perjalanan →
-        </button>
+        <div className="ml-auto flex shrink-0 flex-wrap justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => toggle({ schedule: s, from, to: to ?? null })}
+            aria-pressed={boarded}
+            aria-label={`Saya sudah naik KA ${s.train_number}`}
+            className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${boarded ? "border-slate-300 bg-slate-200 text-slate-600" : "border-brand-600/40 bg-white text-brand-600 hover:bg-brand-50"}`}
+          >
+            {boarded ? "✓ Sudah naik" : "Saya sudah naik ini"}
+          </button>
+          <button
+            type="button"
+            onClick={onOpen}
+            aria-label={`Lihat perjalanan KA ${s.train_number}`}
+            className="rounded-full border border-brand-600/40 bg-white px-3 py-1 text-xs font-semibold text-brand-600 transition-colors hover:bg-brand-50"
+          >
+            Lihat perjalanan →
+          </button>
+        </div>
       </div>
     </li>
   );
@@ -117,7 +132,7 @@ function TimeBox({
   return (
     // A thin border, white fill and a tinted label strip keep the two times apart from the surrounding text.
     <div
-      className={`min-w-0 overflow-hidden rounded-lg border bg-white ${arrive ? "border-brand-600/30" : "border-line"}`}
+      className={`min-w-0 overflow-hidden rounded-none border bg-white ${arrive ? "border-brand-600/30" : "border-line"}`}
     >
       <p
         className={`px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${arrive ? "bg-brand-50 text-brand-700" : "bg-slate-100 text-slate-600"}`}

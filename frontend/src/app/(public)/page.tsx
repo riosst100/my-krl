@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { BoardedTripSection } from "@/components/favorites/BoardedTripSection";
 import { FavoriteDepartures } from "@/components/favorites/FavoriteDepartures";
 import { Card } from "@/components/ui";
 import { StationSearchForm } from "@/components/schedule/StationSearchForm";
@@ -21,6 +22,7 @@ export default async function HomePage() {
 
   return (
     <>
+      <BoardedTripSection />
       {!failed && stations.length > 0 && <FavoriteDepartures stations={stations} />}
 
       <div className="grid gap-6 lg:grid-cols-[1fr_400px] lg:items-start lg:gap-8">

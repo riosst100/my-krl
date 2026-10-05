@@ -110,3 +110,58 @@ body {
   background-repeat: no-repeat;
   background-size: 1.125rem;
 }
+
+/* Cards are square; on phones they run edge to edge across the page padding. */
+.card {
+  border-radius: 0;
+}
+@media (max-width: 639px) {
+  #main .card {
+    margin-inline: -1rem;
+    border-inline-width: 0;
+  }
+}
+
+/* Trip timeline: the stretch ahead of the train, dashes flowing towards the destination. */
+.line-flow {
+  background-color: color-mix(in srgb, var(--color-brand-600) 15%, transparent);
+  background-image: repeating-linear-gradient(
+    to bottom,
+    var(--color-brand-600) 0 6px,
+    transparent 6px 12px
+  );
+  background-size: 100% 12px;
+  animation: line-flow 0.9s linear infinite;
+}
+@keyframes line-flow {
+  to {
+    background-position: 0 12px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .line-flow {
+    animation: none;
+  }
+}
+
+/* The same flowing dashes, sideways (desktop timeline). */
+.line-flow-x {
+  background-color: color-mix(in srgb, var(--color-brand-600) 15%, transparent);
+  background-image: repeating-linear-gradient(
+    to right,
+    var(--color-brand-600) 0 6px,
+    transparent 6px 12px
+  );
+  background-size: 12px 100%;
+  animation: line-flow-x 0.9s linear infinite;
+}
+@keyframes line-flow-x {
+  to {
+    background-position: 12px 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .line-flow-x {
+    animation: none;
+  }
+}

@@ -129,7 +129,7 @@ export function SelectField({
 // --- Layout & feedback ------------------------------------------------------
 
 export function Card({ className, children }: { className?: string; children: ReactNode }) {
-  return <div className={cx("rounded-2xl border border-line/80 bg-surface shadow-card", className)}>{children}</div>;
+  return <div className={cx("card border border-line/80 bg-surface shadow-card", className)}>{children}</div>;
 }
 
 export function Skeleton({ className }: { className?: string }) {

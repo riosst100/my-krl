@@ -48,7 +48,7 @@ export default async function StationPage(props: PageProps<"/stations/[stationCo
         <h1 className="text-xl font-extrabold tracking-tight text-ink sm:text-3xl">Stasiun {station.name}</h1>
       </div>
 
-      <div className="mb-4 rounded-2xl border border-line/80 bg-white p-4 shadow-card sm:mb-6 sm:p-5">
+      <div className="mb-4 card border border-line/80 bg-white p-4 shadow-card sm:mb-6 sm:p-5">
         <TripPicker stationCode={station.code} stationName={station.name} to={to} />
       </div>
 

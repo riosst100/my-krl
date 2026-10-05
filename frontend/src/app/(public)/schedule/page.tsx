@@ -50,7 +50,7 @@ export default async function SchedulePage(props: PageProps<"/schedule">) {
               Halaman stasiun →
             </Link>
           </div>
-          <div className="mb-4 rounded-2xl border border-line/80 bg-white p-4 shadow-card sm:p-5">
+          <div className="mb-4 card border border-line/80 bg-white p-4 shadow-card sm:p-5">
             <TripPicker stationCode={station.code} stationName={station.name} to={to} keep={{ station: station.code }} />
           </div>
           <ScheduleBoard key={`${station.code}-${to ?? ""}`} stationCode={station.code} to={to} />

@@ -157,8 +157,8 @@ function RouteCard({
   const [selected, setSelected] = useState<Schedule | null>(null);
 
   return (
-    <Card className="flex flex-col p-3.5 sm:p-5">
-      <div className="flex items-start justify-between gap-3">
+    <Card className="flex flex-col px-2 py-3.5 sm:p-5">
+      <div className="flex items-start justify-between gap-3 px-2 sm:px-0">
         <div className="min-w-0">
           <h3 className="text-[15px] font-bold leading-snug text-ink sm:text-lg">
             {from.name} <span className="text-muted">→</span> {to.name}
@@ -166,14 +166,14 @@ function RouteCard({
         </div>
         <Link
           href={`/stations/${from.code}?to=${to.code}`}
-          className="shrink-0 pt-0.5 text-xs font-semibold text-brand-600 hover:underline sm:text-[13px]"
+          className="shrink-0 rounded-full border border-brand-600/40 bg-white px-3 py-1 text-xs font-semibold text-brand-600 transition-colors hover:bg-brand-50"
         >
           Semua jadwal →
         </Link>
       </div>
 
       {departures.length === 0 ? (
-        <p className="mt-4 rounded-xl bg-slate-50 px-4 py-6 text-center text-sm text-muted">
+        <p className="mt-4 rounded-none bg-slate-50 px-4 py-6 text-center text-sm text-muted">
           {item.has_schedules_today
             ? "Jadwal KRL selesai sampai jam 12 malam. Kereta mulai berangkat lagi pukul 04:00 WIB."
             : "Jadwal rute ini belum tersedia."}
@@ -183,7 +183,7 @@ function RouteCard({
           {notice && (
             <p
               role="status"
-              className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900"
+              className="mt-3 rounded-none bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900"
             >
               {notice}
             </p>
@@ -193,8 +193,8 @@ function RouteCard({
               <DepartureRow
                 key={s.id}
                 schedule={s}
-                fromName={from.name}
-                toName={to.name}
+                from={from}
+                to={to}
                 onOpen={() => setSelected(s)}
                 secondsLeft={secondsUntil(
                   s.service_date,
