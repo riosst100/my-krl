@@ -463,7 +463,7 @@ Every push to `master` runs [`.github/workflows/deploy.yml`](.github/workflows/d
 | Secret | `VPS_SSH_KEY` | private key whose public key is in the VPS user's `~/.ssh/authorized_keys` |
 | Secret | `VPS_PORT` | optional, default `22` |
 | Variable | `APP_DIR` | `/var/www/my-krl` (git clone of this repo) |
-| Variable | `PHP_FPM_SERVICE` | optional, e.g. `php8.4-fpm` (reloaded with `sudo -n systemctl reload`) |
+| Variable | `PHP_FPM_SERVICE` | optional, e.g. `php8.3-fpm` (reloaded with `sudo -n systemctl reload`) |
 | Variable | `PM2_APP_NAME` | optional, default `my-krl-frontend` |
 | Variable | `FRONTEND_PORT` | optional, default `3000` (used only when pm2 starts the app the first time) |
 

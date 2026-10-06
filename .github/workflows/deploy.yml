@@ -39,7 +39,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: shivammathur/setup-php@v2
         with:
-          php-version: "8.4"
+          php-version: "8.3"  # same as the VPS (composer.json config.platform.php)
           extensions: pdo_pgsql, pgsql, intl, bcmath, zip, pcntl
           coverage: none
       - uses: actions/cache@v4

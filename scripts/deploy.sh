@@ -6,10 +6,12 @@
 # Settings (environment variables, all optional):
 #   PHP_BIN          PHP binary                       (default: php)
 #   COMPOSER_BIN     Composer binary                  (default: composer)
-#   PHP_FPM_SERVICE  systemd unit reloaded after deploy, e.g. php8.4-fpm; empty = skip
+#   PHP_FPM_SERVICE  systemd unit reloaded after deploy, e.g. php8.3-fpm; empty = skip
 #                    (needs passwordless sudo for `systemctl reload <unit>`)
 #   PM2_APP_NAME     pm2 process name of the Next.js app (default: my-krl-frontend)
 #   FRONTEND_PORT    Port for `next start` on first start (default: 3000)
+#   WEB_USER         Owner of backend/storage and bootstrap/cache when deploying as root
+#                    (default: www-data, the php-fpm user)
 set -euo pipefail
 
 PHP_BIN=${PHP_BIN:-php}
@@ -17,6 +19,10 @@ COMPOSER_BIN=${COMPOSER_BIN:-composer}
 PHP_FPM_SERVICE=${PHP_FPM_SERVICE:-}
 PM2_APP_NAME=${PM2_APP_NAME:-my-krl-frontend}
 FRONTEND_PORT=${FRONTEND_PORT:-3000}
+WEB_USER=${WEB_USER:-www-data}
+
+# Deploying as root: allow Composer plugins (Laravel's package discovery needs them).
+[ "$(id -u)" -eq 0 ] && export COMPOSER_ALLOW_SUPERUSER=1
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 log() { printf '\n==> %s\n' "$*"; }
@@ -39,9 +45,14 @@ log "Backend: restart queue workers"
 # Workers exit after their current job; supervisor/pm2 starts them again with the new code.
 "$PHP_BIN" artisan queue:restart
 
+if [ "$(id -u)" -eq 0 ]; then
+    # Files artisan just created as root (logs, caches) must stay writable for php-fpm.
+    chown -R "$WEB_USER":"$WEB_USER" storage bootstrap/cache
+fi
+
 if [ -n "$PHP_FPM_SERVICE" ]; then
     log "Backend: reload $PHP_FPM_SERVICE (clears OPcache)"
-    sudo -n systemctl reload "$PHP_FPM_SERVICE"
+    if [ "$(id -u)" -eq 0 ]; then systemctl reload "$PHP_FPM_SERVICE"; else sudo -n systemctl reload "$PHP_FPM_SERVICE"; fi
 fi
 
 # --- Frontend (Next.js) -------------------------------------------------------
