@@ -1,10 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { SyncStatusBadge } from "@/components/admin/SyncStatusBadge";
+import {
+  SyncStatusBadge,
+  TRIGGER_LABELS,
+} from "@/components/admin/SyncStatusBadge";
 import { Alert, Button, Card, Skeleton } from "@/components/ui";
 import { useToast } from "@/components/ui/Toast";
-import { triggerPushToProd, type SyncLogsMeta } from "@/lib/api/admin";
+import { triggerKciSync, type SyncLogsMeta } from "@/lib/api/admin";
 import { ApiError, errorMessage } from "@/lib/api/client";
 import type { SyncProgress } from "@/lib/api/types";
 import { formatDateTimeLong, formatNumber } from "@/lib/format";
@@ -12,16 +15,13 @@ import { formatDateTimeLong, formatNumber } from "@/lib/format";
 const STEPS: { phase: SyncProgress["phase"]; label: string }[] = [
   { phase: "fetch_schedules", label: "Ambil jadwal" },
   { phase: "fetch_stops", label: "Ambil pemberhentian" },
-  { phase: "stations", label: "Kirim stasiun" },
-  { phase: "push_schedules", label: "Kirim jadwal" },
-  { phase: "push_stops", label: "Kirim pemberhentian" },
 ];
 
 /**
- * Admin → Sinkronisasi. Local: "Sync Data to Prod" (fetch from KCI, push to the
- * production API) with a live progress bar. Server: shows what was received.
+ * Admin → Sinkronisasi → Sync Data: "Sync dari KCI" (fetch the selected stations'
+ * timetable and train stops from KCI into the database) with a live progress bar.
  */
-export function ProdPushPanel({
+export function KciSyncPanel({
   meta,
   onChanged,
 }: {
@@ -30,19 +30,16 @@ export function ProdPushPanel({
 }) {
   const { toast } = useToast();
   const [starting, setStarting] = useState(false);
-  // Unchecked = send the data already stored locally (after a manual JSON import).
-  const [fetchFirst, setFetchFirst] = useState(true);
 
   const last = meta?.last_sync ?? null;
   const running = meta?.in_progress ?? false;
   const progress = running ? last?.meta?.progress : undefined;
 
-  // fetch=false: resend the data that is already on this machine (retry after a failed push).
-  const start = async (fetch = fetchFirst) => {
+  const start = async () => {
     setStarting(true);
     try {
-      await triggerPushToProd(fetch);
-      toast("Sync ke prod dimulai. Progres tampil di bawah.", "success");
+      await triggerKciSync();
+      toast("Sync dari KCI dimulai. Progres tampil di bawah.", "success");
       onChanged();
     } catch (err) {
       toast(
@@ -65,94 +62,39 @@ export function ProdPushPanel({
     );
   }
 
-  if (meta.mode === "prod") {
-    return (
-      <Card className="mb-6 p-5">
-        <h2 className="font-semibold text-ink">Data dari lokal</h2>
-        <p className="mt-1 text-sm text-muted">
-          Server ini tidak mengambil data dari KCI. Jadwal dikirim dari komputer
-          lokal lewat menu Sinkronisasi di panel admin lokal.
-        </p>
-        <LastResult
-          log={last}
-          lastSuccessAt={meta.last_successful_sync?.finished_at ?? null}
-          received
-        />
-      </Card>
-    );
-  }
-
   return (
     <Card className="mb-6 p-5">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
-          <h2 className="font-semibold text-ink">Sync Data ke Prod</h2>
+          <h2 className="font-semibold text-ink">Sync dari KCI</h2>
           <p className="mt-1 text-sm text-muted">
-            Mengambil jadwal dan pemberhentian kereta dari KCI di komputer ini,
-            lalu mengirimnya ke server prod
-            {meta?.push_target ? (
-              <span className="font-medium text-slate-700">
-                {" "}
-                ({meta.push_target})
-              </span>
-            ) : null}
-            . Stasiun yang disinkronkan sesuai pilihan di bawah.
+            Mengambil jadwal dan pemberhentian kereta langsung dari KCI.
+            Stasiun yang disinkronkan sesuai pilihan di bawah.
           </p>
         </div>
         <Button
-          onClick={() => start()}
+          onClick={start}
           loading={starting || running}
-          disabled={!meta || running}
+          disabled={running}
           className="h-11 shrink-0"
         >
-          {running ? "Sinkronisasi berjalan…" : "Sync Data to Prod"}
+          {running ? "Sinkronisasi berjalan…" : "Sync Sekarang"}
         </Button>
       </div>
-
-      <label className="mt-3 flex w-fit cursor-pointer items-start gap-2 text-[13px] text-slate-700">
-        <input
-          type="checkbox"
-          checked={fetchFirst}
-          onChange={(e) => setFetchFirst(e.target.checked)}
-          disabled={running}
-          className="mt-0.5 h-4 w-4 rounded accent-brand-600"
-        />
-        <span>
-          Ambil data dari KCI dulu
-          <span className="block text-xs text-muted">
-            Hilangkan centang untuk mengirim data yang sudah ada di komputer ini
-            (misalnya hasil import JSON).
-          </span>
-        </span>
-      </label>
-
-      {running && (
-        <ProgressView progress={progress} fetched={last?.meta?.fetch} />
-      )}
+      {running && <ProgressView progress={progress} />}
       {!running && (
         <LastResult
           log={last}
-          lastSuccessAt={meta?.last_successful_sync?.finished_at ?? null}
-          onRetry={() => start(false)}
-          retrying={starting}
+          lastSuccessAt={meta.last_successful_sync?.finished_at ?? null}
         />
       )}
     </Card>
   );
 }
 
-function ProgressView({
-  progress,
-  fetched,
-}: {
-  progress: SyncProgress | undefined;
-  fetched: boolean | undefined;
-}) {
+function ProgressView({ progress }: { progress: SyncProgress | undefined }) {
   const percent = progress?.percent ?? 0;
-  const steps =
-    fetched === false
-      ? STEPS.filter((s) => !s.phase.startsWith("fetch_"))
-      : STEPS;
+  const steps = STEPS;
   const current = steps.findIndex((s) => s.phase === progress?.phase);
 
   return (
@@ -168,7 +110,7 @@ function ProgressView({
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={percent}
-        aria-label="Progres sync ke prod"
+        aria-label="Progres sync dari KCI"
         className="mt-2 h-2.5 overflow-hidden rounded-full bg-slate-200"
       >
         <div
@@ -207,25 +149,12 @@ function ProgressView({
 function LastResult({
   log,
   lastSuccessAt,
-  received,
-  onRetry,
-  retrying,
 }: {
   log: SyncLogsMeta["last_sync"];
   lastSuccessAt: string | null;
-  received?: boolean;
-  /** Resend the data already stored locally (only offered after a failed push). */
-  onRetry?: () => void;
-  retrying?: boolean;
 }) {
   if (!log) {
-    return (
-      <p className="mt-4 text-sm text-muted">
-        {received
-          ? "Belum ada data yang diterima dari lokal."
-          : "Belum pernah sync ke prod."}
-      </p>
-    );
+    return <p className="mt-4 text-sm text-muted">Belum pernah sync dari KCI.</p>;
   }
 
   const ok = log.status === "success" || log.status === "partial";
@@ -240,38 +169,24 @@ function LastResult({
               log.finished_at ?? log.started_at ?? log.created_at,
             )}
           </time>
-          {log.triggered_by && (
-            <span className="text-muted"> · oleh {log.triggered_by.name}</span>
-          )}
+          <span className="text-muted">
+            {" "}
+            · {TRIGGER_LABELS[log.trigger] ?? log.trigger}
+            {log.triggered_by && ` oleh ${log.triggered_by.name}`}
+          </span>
         </p>
       </div>
       {ok && (
         <p className="mt-1.5 text-sm text-slate-600">
           {formatNumber(log.records_processed)} jadwal ·{" "}
           {formatNumber(log.stations_processed)} stasiun
-          {typeof log.meta?.trains === "number" &&
-            ` · ${formatNumber(log.meta.trains)} kereta (${formatNumber(log.meta.stops ?? 0)} pemberhentian)`}
+          {log.meta?.train_stops &&
+            ` · ${formatNumber(log.meta.train_stops.trains)} kereta (${formatNumber(log.meta.train_stops.stops)} pemberhentian)`}
         </p>
       )}
       {log.error_message && (
         <div className="mt-2">
           <Alert>{log.error_message}</Alert>
-        </div>
-      )}
-      {log.status === "failed" && log.meta?.data_ready && onRetry && (
-        <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-[13px] text-slate-600">
-            Data sudah diunduh di komputer ini. Hanya pengiriman ke prod yang
-            gagal, jadi tidak perlu mengambil dari KCI lagi.
-          </p>
-          <Button
-            variant="secondary"
-            onClick={onRetry}
-            loading={retrying}
-            className="shrink-0"
-          >
-            Coba kirim lagi
-          </Button>
         </div>
       )}
       {!ok && lastSuccessAt && (

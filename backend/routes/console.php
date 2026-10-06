@@ -2,11 +2,16 @@
 
 use App\Models\User;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Schedule;
 
-// There are no scheduled KCI jobs: the production server cannot reach KCI. The
-// local machine fetches the data and pushes it to production from the admin
-// panel ("Sync Data to Prod"). `kci:sync-stations` / `kci:sync-schedules` stay
-// available as manual commands for the local machine.
+// Automatic sync at the times set in Admin -> Sinkronisasi (or KCI_AUTO_SYNC_TIMES).
+// The command checks every minute whether a time is due and queues the sync:
+// "Sync Data to Prod" on the local machine, a direct KCI fetch on the server
+// (through the kci-fetch sidecar). The manual buttons keep working as before.
+Schedule::command('kci:auto-sync')
+    ->everyMinute()
+    ->withoutOverlapping()
+    ->onOneServer();
 
 // Used by the Docker entrypoint to seed only a fresh database.
 Artisan::command('krl:needs-seed', function () {

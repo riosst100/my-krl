@@ -104,13 +104,15 @@ class AdminTest extends TestCase
         $this->getJson('/api/v1/stations')->assertOk()->assertJsonCount(0, 'data');
     }
 
-    public function test_there_is_no_manual_kci_sync_endpoint_any_more(): void
+    public function test_only_sync_from_kci_remains_of_the_old_sync_endpoints(): void
     {
         $admin = User::factory()->admin()->create();
 
-        // The server cannot reach KCI: data only arrives through the push from the local machine.
+        // Manual sync is POST /admin/sync/kci; the old endpoints and the push to prod are gone.
         $this->actingAs($admin, 'admin')->fromFrontend();
         $this->postJson('/api/v1/admin/sync')->assertNotFound();
         $this->postJson('/api/v1/admin/stations/sync')->assertNotFound();
+        $this->postJson('/api/v1/admin/sync/prod')->assertNotFound();
+        $this->postJson('/api/v1/ingest/start')->assertNotFound();
     }
 }

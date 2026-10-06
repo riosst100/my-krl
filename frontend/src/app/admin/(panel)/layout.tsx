@@ -23,7 +23,7 @@ const NAV: NavItem[] = [
     href: "/admin/sync",
     label: "Sinkronisasi",
     children: [
-      { href: "/admin/sync", label: "Sync ke Prod" },
+      { href: "/admin/sync", label: "Sync Data" },
       { href: "/admin/sync/import", label: "Import Manual" },
       { href: "/admin/sync/sumber", label: "Sumber Data" },
       { href: "/admin/sync/riwayat", label: "Riwayat" },

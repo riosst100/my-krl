@@ -114,17 +114,13 @@ export function getAdminSchedules(filters: ScheduleFilters) {
 // --- Sync ------------------------------------------------------------------------
 
 export interface SyncLogsMeta {
-  /** local = can push to prod; prod = only receives data from local. */
-  mode: "local" | "prod";
-  /** Host of the production API (local mode). */
-  push_target: string | null;
   in_progress: boolean;
-  /** Local: the last push to prod. Prod: the last data received from local. */
+  /** The last "Sync dari KCI" (manual or automatic). */
   last_sync: SyncLog | null;
   last_successful_sync: SyncLog | null;
 }
 
-export function getSyncLogs(page = 1, type: "" | "schedules" | "stations" | "push" = "") {
+export function getSyncLogs(page = 1, type: "" | "schedules" | "stations" = "") {
   return apiFetch<Paginated<SyncLog, SyncLogsMeta>>("/admin/sync-logs", { query: { page, type } });
 }
 
@@ -201,13 +197,39 @@ export async function testSchedulesApiUrl(url: string, station?: string): Promis
   ).data;
 }
 
-/**
- * "Sync Data to Prod": fetch from KCI locally and push to production (runs in the background).
- * `fetch: false` sends the data already in the local database (e.g. after a manual JSON import).
- */
-export async function triggerPushToProd(fetch = true): Promise<SyncLog> {
-  const res = await apiFetch<{ data: SyncLog }>("/admin/sync/prod", { method: "POST", body: { fetch } });
+/** "Sync dari KCI": fetch from KCI straight into the database (runs in the background). */
+export async function triggerKciSync(): Promise<SyncLog> {
+  const res = await apiFetch<{ data: SyncLog }>("/admin/sync/kci", { method: "POST" });
   return res.data;
+}
+
+// --- Automatic sync times ---------------------------------------------------------
+
+export interface AutoSyncSetting {
+  /** Times of day ("HH:MM", sorted) in effect; empty = off. */
+  times: string[];
+  /** KCI_AUTO_SYNC_TIMES from the environment. */
+  default_times: string[];
+  is_default: boolean;
+  timezone: string;
+  next_run_at: string | null;
+  last_run: SyncLog | null;
+  scheduler_seen_at: string | null;
+  scheduler_running: boolean;
+  updated_at: string | null;
+  updated_by: string | null;
+}
+
+export async function getAutoSyncSetting(): Promise<AutoSyncSetting> {
+  return (await apiFetch<{ data: AutoSyncSetting }>("/admin/settings/auto-sync")).data;
+}
+
+export async function saveAutoSyncTimes(times: string[]): Promise<AutoSyncSetting> {
+  return (await apiFetch<{ data: AutoSyncSetting }>("/admin/settings/auto-sync", { method: "PUT", body: { times } })).data;
+}
+
+export async function resetAutoSyncTimes(): Promise<AutoSyncSetting> {
+  return (await apiFetch<{ data: AutoSyncSetting }>("/admin/settings/auto-sync", { method: "DELETE" })).data;
 }
 
 export type ImportType = "schedules" | "train_stops" | "stations";

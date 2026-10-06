@@ -38,6 +38,8 @@
         <server name="KCI_STATIONS_API_URL" value="" force="true"/>
         <server name="KCI_SCHEDULES_API_URL" value="" force="true"/>
         <server name="KCI_TRAIN_STOPS_API_URL" value="" force="true"/>
+        <server name="KCI_FETCH_PROXY_URL" value="" force="true"/>
+        <server name="KCI_AUTO_SYNC_TIMES" value="" force="true"/>
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>

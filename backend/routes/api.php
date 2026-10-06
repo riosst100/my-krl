@@ -40,14 +40,6 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
     Route::get('schedules/trains/{trainNumber}/stops', [V1\ScheduleController::class, 'trainStops'])->where('trainNumber', '[A-Za-z0-9]+')->name('schedules.train-stops');
     Route::get('schedules/upcoming', [V1\ScheduleController::class, 'upcoming'])->name('schedules.upcoming');
 
-    // --- Data pushed from the local machine (shared-secret token, see SYNC_INGEST_TOKEN) --
-    Route::prefix('ingest')->name('ingest.')->middleware('ingest')->group(function () {
-        Route::post('start', [V1\IngestController::class, 'start'])->name('start');
-        Route::post('stations', [V1\IngestController::class, 'stations'])->name('stations');
-        Route::post('schedules', [V1\IngestController::class, 'schedules'])->name('schedules');
-        Route::post('stops', [V1\IngestController::class, 'stops'])->name('stops');
-        Route::post('finish', [V1\IngestController::class, 'finish'])->name('finish');
-    });
 
     // --- Admin (separate "admin" session guard) ----------------------------
     Route::prefix('admin')->name('admin.')->group(function () {
@@ -70,6 +62,9 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
             Route::get('settings/sync-stations', [Admin\SyncStationsController::class, 'show'])->name('settings.sync-stations.show');
             Route::put('settings/sync-stations', [Admin\SyncStationsController::class, 'update'])->name('settings.sync-stations.update');
             Route::delete('settings/sync-stations', [Admin\SyncStationsController::class, 'reset'])->name('settings.sync-stations.reset');
+            Route::get('settings/auto-sync', [Admin\AutoSyncController::class, 'show'])->name('settings.auto-sync.show');
+            Route::put('settings/auto-sync', [Admin\AutoSyncController::class, 'update'])->name('settings.auto-sync.update');
+            Route::delete('settings/auto-sync', [Admin\AutoSyncController::class, 'reset'])->name('settings.auto-sync.reset');
             Route::get('settings/schedules-api', [Admin\SchedulesApiController::class, 'show'])->name('settings.schedules-api.show');
             Route::put('settings/schedules-api', [Admin\SchedulesApiController::class, 'update'])->name('settings.schedules-api.update');
             Route::delete('settings/schedules-api', [Admin\SchedulesApiController::class, 'reset'])->name('settings.schedules-api.reset');
@@ -88,7 +83,7 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
             Route::get('sync-logs/{syncLog}', [Admin\SyncController::class, 'show'])->name('sync.show');
             Route::get('kci-watch', [Admin\SyncController::class, 'watch'])->name('kci-watch');
             Route::post('sync/import', [Admin\SyncController::class, 'import'])->middleware('throttle:admin-sync')->name('sync.import');
-            Route::post('sync/prod', [Admin\SyncController::class, 'push'])->middleware('throttle:admin-sync')->name('sync.push');
+            Route::post('sync/kci', [Admin\SyncController::class, 'kci'])->middleware('throttle:admin-sync')->name('sync.kci');
         });
     });
 });

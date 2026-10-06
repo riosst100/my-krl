@@ -1,6 +1,5 @@
 <?php
 
-use App\Http\Middleware\EnsureIngestToken;
 use App\Http\Middleware\EnsureUserIsAdmin;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Database\QueryException;
@@ -27,7 +26,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->statefulApi();
         $middleware->throttleApi();
 
-        $middleware->alias(['admin' => EnsureUserIsAdmin::class, 'ingest' => EnsureIngestToken::class]);
+        $middleware->alias(['admin' => EnsureUserIsAdmin::class]);
 
         // API clients get a 401 JSON response instead of a redirect.
         $middleware->redirectGuestsTo(fn (Request $request) => $request->is('api/*') ? null : '/');

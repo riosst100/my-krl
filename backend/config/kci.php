@@ -75,6 +75,10 @@ return [
 
     'user_agent' => env('KCI_USER_AGENT', 'JadwalKRL/1.0'),
 
+    // kci-fetch sidecar (docker/kci-fetch): Cloudflare blocks PHP's TLS fingerprint,
+    // so KCI URL requests go through this curl_cffi service. Empty = request directly.
+    'fetch_proxy_url' => rtrim((string) env('KCI_FETCH_PROXY_URL', ''), '/'),
+
     'endpoints' => [
         'stations' => env('KCI_STATIONS_ENDPOINT', '/krl-station'),
         'schedules' => env('KCI_SCHEDULES_ENDPOINT', '/schedule'),
@@ -101,13 +105,12 @@ return [
     'watch_every_minutes' => (int) env('KCI_WATCH_EVERY_MINUTES', 15),
     'watch_retention_days' => (int) env('KCI_WATCH_RETENTION_DAYS', 30),
 
-    // Local -> production push. The production server cannot reach KCI, so the
-    // local machine fetches the data and pushes it to the production API.
-    // Local: PROD_SYNC_URL (e.g. https://api-krl.inovasionline.com) + PROD_SYNC_TOKEN.
-    // Production: SYNC_INGEST_TOKEN (the same secret) switches on the receiving API.
-    'push_url' => rtrim((string) env('PROD_SYNC_URL', ''), '/'),
-    'push_token' => env('PROD_SYNC_TOKEN'),
-    'ingest_token' => env('SYNC_INGEST_TOKEN'),
+    // Automatic sync: comma-separated times of day (HH:MM, app timezone), e.g. "00:30,04:00".
+    // Admins can change them in the panel (settings table). Empty = no automatic sync.
+    'auto_sync_times' => env('KCI_AUTO_SYNC_TIMES', ''),
+
+    // A scheduler that was down at the exact minute still starts a run this many minutes late.
+    'auto_sync_grace_minutes' => (int) env('KCI_AUTO_SYNC_GRACE_MINUTES', 10),
 
     // A queued/running sync older than this is treated as stale (crashed worker).
     'stale_after_minutes' => (int) env('KCI_SYNC_STALE_MINUTES', 30),

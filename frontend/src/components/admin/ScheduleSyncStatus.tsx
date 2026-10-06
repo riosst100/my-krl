@@ -8,12 +8,12 @@ import { formatDateLong, formatDateTimeLong, formatNumber } from "@/lib/format";
 import { useApi } from "@/lib/hooks/useApi";
 
 /**
- * Admin → Jadwal: when the data was last synced (pushed from local / received
- * from local) and for which service date. Syncing itself lives in Admin → Sinkronisasi.
+ * Admin → Jadwal: when the data was last synced from KCI and for which service
+ * date. Syncing itself lives in Admin → Sinkronisasi.
  */
 export function ScheduleSyncStatus() {
   const { data, loading, error } = useApi("schedule-sync-status", () =>
-    getSyncLogs(1, "push"),
+    getSyncLogs(1, "schedules"),
   );
   const meta = data?.meta;
   const last = meta?.last_sync;
@@ -24,9 +24,7 @@ export function ScheduleSyncStatus() {
       <section aria-labelledby="schedule-sync-title" className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
           <h2 id="schedule-sync-title" className="font-semibold text-ink">
-            {meta?.mode === "prod"
-              ? "Data terakhir dari lokal"
-              : "Terakhir sync ke prod"}
+            Terakhir sync dari KCI
           </h2>
           {last && <SyncStatusBadge status={last.status} />}
         </div>
@@ -69,21 +67,17 @@ export function ScheduleSyncStatus() {
           </>
         ) : (
           <p className="mt-1 text-sm text-muted">
-            {meta?.mode === "prod"
-              ? "Belum ada data dari lokal."
-              : "Belum pernah disinkronkan."}
+            Belum pernah disinkronkan.
           </p>
         )}
       </section>
 
-      {meta?.mode === "local" && (
-        <Link
-          href="/admin/sync"
-          className="shrink-0 text-sm font-semibold text-brand-600 hover:underline"
-        >
-          Sync Data ke Prod →
-        </Link>
-      )}
+      <Link
+        href="/admin/sync"
+        className="shrink-0 text-sm font-semibold text-brand-600 hover:underline"
+      >
+        Sync Data →
+      </Link>
     </Card>
   );
 }

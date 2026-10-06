@@ -23,7 +23,7 @@ import { useApi } from "@/lib/hooks/useApi";
 
 export default function AdminSyncHistoryPage() {
   const [page, setPage] = useState(1);
-  const [type, setType] = useState<"" | "schedules" | "stations" | "push">("");
+  const [type, setType] = useState<"" | "schedules" | "stations">("");
   const { data, error, loading, reload } = useApi(`sync|${page}|${type}`, () =>
     getSyncLogs(page, type),
   );
@@ -32,7 +32,7 @@ export default function AdminSyncHistoryPage() {
     <>
       <PageHeader
         title="Riwayat Sinkronisasi"
-        description="Semua sync ke prod, data yang diterima dari lokal, dan import manual."
+        description="Semua sync dari KCI (manual dan otomatis) dan import manual."
       />
 
       <Card className="overflow-hidden">
@@ -50,7 +50,6 @@ export default function AdminSyncHistoryPage() {
             <option value="">Semua</option>
             <option value="schedules">Jadwal</option>
             <option value="stations">Stasiun</option>
-            <option value="push">Sync ke Prod</option>
           </SelectField>
         </div>
         {error ? (

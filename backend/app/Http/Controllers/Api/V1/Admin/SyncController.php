@@ -7,18 +7,16 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\SyncLogResource;
 use App\Models\KciTimetableCheck;
 use App\Models\SyncLog;
+use App\Services\AutoSyncService;
 use App\Services\KciTimetableWatchService;
-use App\Jobs\PushToProdJob;
 use App\Models\Station;
 use App\Services\Kci\Exceptions\KciApiException;
 use App\Services\ManualImportService;
-use App\Services\ProdPushService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Response;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Cache;
 
 class SyncController extends Controller
 {
@@ -26,13 +24,12 @@ class SyncController extends Controller
     {
         $request->validate([
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:100'],
-            'type' => ['sometimes', 'nullable', 'in:schedules,stations,push'],
+            'type' => ['sometimes', 'nullable', 'in:schedules,stations'],
         ]);
 
         $type = match ($request->input('type')) {
             'schedules' => SyncLog::TYPE_KCI_SCHEDULES,
             'stations' => SyncLog::TYPE_KCI_STATIONS,
-            'push' => SyncLog::TYPE_PROD_PUSH,
             default => null,
         };
 
@@ -41,21 +38,13 @@ class SyncController extends Controller
             ->latest('id')
             ->paginate($request->integer('per_page', 20));
 
-        // "The sync": on the local machine the push to prod, on the server the data received from local.
-        $local = ProdPushService::configured();
-        $syncs = fn () => SyncLog::query()->when(
-            $local,
-            fn ($q) => $q->where('type', SyncLog::TYPE_PROD_PUSH),
-            fn ($q) => $q->where('type', SyncLog::TYPE_KCI_SCHEDULES)->where('trigger', 'ingest'),
-        );
+        // "The sync": Sync dari KCI, manual or automatic.
+        $syncs = fn () => SyncLog::query()->where('type', SyncLog::TYPE_KCI_SCHEDULES)->whereIn('trigger', ['manual', 'schedule']);
         $last = $syncs()->with('triggeredBy')->latest('id')->first();
         $lastSuccess = $syncs()->whereIn('status', [SyncStatus::Success, SyncStatus::Partial])->latest('finished_at')->first();
 
         return SyncLogResource::collection($logs)->additional([
             'meta' => [
-                // local = can push to prod (PROD_SYNC_URL + PROD_SYNC_TOKEN set); prod = only receives.
-                'mode' => $local ? 'local' : 'prod',
-                'push_target' => ProdPushService::targetHost(),
                 'in_progress' => $syncs()->whereIn('status', [SyncStatus::Queued, SyncStatus::Running])
                     ->where('created_at', '>=', now()->subMinutes(config('kci.stale_after_minutes')))->exists(),
                 'last_sync' => $last ? new SyncLogResource($last) : null,
@@ -97,29 +86,13 @@ class SyncController extends Controller
     }
 
     /**
-     * POST /admin/sync/prod — "Sync Data to Prod": fetch from KCI locally and push to production.
-     * The queue worker runs it in the background; progress is on the sync log.
+     * POST /admin/sync/kci — "Sync dari KCI": fetch the configured stations' timetable and
+     * train stops from KCI (through the kci-fetch sidecar) into this database. The queue
+     * worker runs it in the background; progress is on the sync log.
      */
-    public function push(Request $request, ProdPushService $push): JsonResponse
+    public function kci(Request $request, AutoSyncService $sync): JsonResponse
     {
-        // fetch=false: send the data already in the local database (e.g. after a manual JSON import).
-        $validated = $request->validate(['fetch' => ['sometimes', 'boolean']]);
-        $fetch = (bool) ($validated['fetch'] ?? true);
-
-        if (! ProdPushService::configured()) {
-            return response()->json(['message' => 'Server ini tidak dikonfigurasi untuk mengirim data (PROD_SYNC_URL dan PROD_SYNC_TOKEN belum diatur).'], Response::HTTP_UNPROCESSABLE_ENTITY);
-        }
-
-        $log = Cache::lock('prod-push:queue', 10)->block(5, function () use ($request, $push, $fetch) {
-            if (SyncLog::inProgress(SyncLog::TYPE_PROD_PUSH)->exists()) {
-                return null;
-            }
-
-            $log = $push->createLog($request->user()->id, fetch: $fetch);
-            PushToProdJob::dispatch($log->id);
-
-            return $log;
-        });
+        $log = $sync->start('manual', $request->user()->id);
 
         if (! $log) {
             return response()->json(['message' => 'A synchronization is already in progress.'], Response::HTTP_CONFLICT);

@@ -13,7 +13,7 @@ import {
 } from "@/lib/api/admin";
 import { formatNumber, lineLabel } from "@/lib/format";
 
-/** Admin → Sinkronisasi: where the local machine fetches schedules and train stops from. */
+/** Admin → Sinkronisasi: where schedules and train stops are fetched from. */
 export function ScheduleSyncPanel() {
   return (
     <>
@@ -57,7 +57,7 @@ export function ScheduleSyncPanel() {
         saveUrl={saveTrainStopsApiUrl}
         resetUrl={resetTrainStopsApiUrl}
         testUrl={(url) => testTrainStopsApiUrl(url)}
-        note="Diambil bersama jadwal saat Sync Data to Prod; kereta yang pemberhentiannya sudah tersimpan hari itu dilewati."
+        note="Diambil bersama jadwal saat sinkronisasi; kereta yang pemberhentiannya sudah tersimpan hari itu dilewati."
         renderPreview={(p) => (
           <>
             <p className="font-semibold">

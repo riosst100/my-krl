@@ -243,11 +243,12 @@ try {
   await page.getByRole("link", { name: "Sinkronisasi", exact: true }).click();
   await page.waitForURL("**/admin/sync");
   const submenu = page.getByRole("navigation", { name: "Navigasi admin" });
-  for (const label of ["Sync ke Prod", "Import Manual", "Sumber Data", "Riwayat"]) await submenu.getByRole("link", { name: label }).waitFor();
-  await page.getByRole("heading", { level: 1, name: "Sync ke Prod" }).waitFor();
-  await page.getByRole("button", { name: "Sync Data to Prod" }).or(page.getByText("Data dari lokal")).first().waitFor();
+  for (const label of ["Sync Data", "Import Manual", "Sumber Data", "Riwayat"]) await submenu.getByRole("link", { name: label }).waitFor();
+  await page.getByRole("heading", { level: 1, name: "Sync Data" }).waitFor();
+  await page.getByRole("button", { name: "Sync Sekarang" }).waitFor();
+  await page.getByRole("heading", { name: "Sync otomatis" }).waitFor();
   await page.screenshot({ path: `${SHOTS}/admin-sync.png` });
-  step("sync page: Sync ke Prod");
+  step("sync page: Sync Data + Sync otomatis");
 
   // Sumber Data: dry-run each API URL (no save).
   await submenu.getByRole("link", { name: "Sumber Data" }).click();

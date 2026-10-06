@@ -86,8 +86,9 @@ The admin comes from `ADMIN_EMAIL` / `ADMIN_PASSWORD` in `backend/.env`. **Chang
 | ----------- | ----------------------------------------------------------------------- |
 | `postgres`  | PostgreSQL 17 (`krl` database + `krl_test` for automated tests)          |
 | `backend`   | `php artisan serve` on :8000; runs migrations + seeding on startup       |
-| `queue`     | `queue:work` — runs the "Sync Data to Prod" job started from the admin panel |
-| `scheduler` | `schedule:work` — nothing is scheduled any more (the server cannot reach KCI); kept for future jobs |
+| `queue`     | `queue:work` — runs the sync jobs (manual button or automatic schedule) |
+| `scheduler` | `schedule:work` — `kci:auto-sync` every minute: starts the sync at the times set in the admin panel |
+| `kci-fetch` | Python `curl_cffi` sidecar: fetches kci.id with a browser TLS fingerprint (see below) |
 | `frontend`  | `next dev` on :3000                                                     |
 
 Redis is not used: sessions, cache, locks and the queue use the database.
@@ -129,7 +130,7 @@ Browser end-to-end test (register → login → "browser restart" → schedule s
 
 ```bash
 docker run --rm --network host -v "$PWD/frontend/e2e":/e2e:ro -e E2E_BASE_URL=http://localhost:3000 -e E2E_STATION=THB node:24-bookworm \
-  sh -c "mkdir /pw && cd /pw && npm init -y >/dev/null && npm i playwright@1 >/dev/null && npx playwright install --with-deps chromium >/dev/null && node /e2e/flow.mjs"
+  sh -c "mkdir /pw && cd /pw && npm init -y >/dev/null && npm i playwright@1 >/dev/null && npx playwright install --with-deps chromium >/dev/null && cp /e2e/flow.mjs . && node flow.mjs"
 ```
 
 ### Without Docker
@@ -181,8 +182,6 @@ Compose injects the database host/credentials, `APP_URL`, `FRONTEND_URL` and `SA
 | `KCI_SYNC_STATIONS` | Comma-separated station codes to sync (e.g. `THB` while testing); empty = all active stations |
 | `KCI_SYNC_DAYS` | Service days stored per sync (starting today) |
 | `KCI_RETENTION_DAYS` | Older schedules are pruned |
-| `PROD_SYNC_URL`, `PROD_SYNC_TOKEN` | **Local only**: base URL of the production API (e.g. `https://api-krl.inovasionline.com`) and the shared secret for "Sync Data to Prod" |
-| `SYNC_INGEST_TOKEN` | **Server only**: the same secret; it switches on the receiving API (`/api/v1/ingest/*`). Empty = receiving is off |
 | `KCI_STATIONS_API_URL` | Default Stations API URL (`https://www.kci.id/api/krl/stations`); admins can override it in the panel |
 | `KCI_STATIONS_API_TOKEN` | Optional bearer token for the Stations API URL |
 | `KCI_SCHEDULES_API_URL` | Default Schedules API URL (`stationid` / `{station}` is replaced per station); admins can override it in the panel; empty = KCI client |
@@ -270,16 +269,23 @@ PostgreSQL (stations, train_lines, schedules, sync_logs)  ◄── all API read
 - `MockKciClient` generates a deterministic, realistic timetable (5 lines, ~70 stations, peak/off-peak/weekend headways) in the same shape. **Its times are generated, not official.**
 - To connect another source, implement `App\Services\Kci\Contracts\KciClient` and bind it in `AppServiceProvider` — nothing else changes.
 
-**The production server cannot reach KCI**, so there is no automatic or manual KCI sync on the server. The **local machine** (which can reach KCI) fetches the data and pushes it to production:
+**Cloudflare and the `kci-fetch` sidecar.** Cloudflare in front of kci.id blocks clients by their **TLS/HTTP2 fingerprint**, not by IP or headers: PHP/curl/Node get HTTP 403 "Attention Required" even with browser headers, from a datacenter and from home. Python `curl_cffi` with `impersonate="chrome"` passes. So every KCI URL request (`KciUrlClient`) goes through the `kci-fetch` sidecar (`docker/kci-fetch/kci_fetch.py`, `GET /fetch?url=…`) when `KCI_FETCH_PROXY_URL` is set (Docker Compose: `http://kci-fetch:8080`):
 
-1. Local: Admin → Sinkronisasi → Sync ke Prod → choose the stations to sync ("Stasiun yang disinkronkan"), then **Sync Data to Prod**. A background job (`PushToProdJob`) fetches the timetable and train stops of those stations from KCI into the local database, then sends the stations, schedules and train stops to the production API in small batches. A progress bar shows the current step (fetch schedules → fetch train stops → send stations → send schedules → send train stops). Each push is a `prod_push` row in `sync_logs`.
-2. Server: `POST /api/v1/ingest/{start,stations,schedules,stops,finish}` (bearer token = `SYNC_INGEST_TOKEN`) stores what it receives, replaces each station's timetable and, on `finish`, deletes everything that was not part of the push (other dates, stations that were not sent). Each received push is a `kci_schedules` row (`trigger = ingest`). Existing stations keep their activation and manually entered coordinates.
+- browser profile `KCI_IMPERSONATE` (default `chrome`), falling back to `safari`, then `firefox` on a Cloudflare block;
+- a block (403/503 HTML, `cf-mitigated`, "Attention Required" / "Just a moment") is answered with HTTP 502 + `X-Kci-Fetch-Error` and logged with the `cf-ray`; Laravel turns it into a clear sync error instead of parsing HTML;
+- upstream status, body and rate-limit headers (`Retry-After`, `X-RateLimit-*`) are passed through, so the 429 handling and batch pauses keep working; only `https://*.kci.id` URLs are allowed; timeout `KCI_FETCH_TIMEOUT` (20 s).
 
-**Admin → Sinkronisasi is a section with four sub menus:** *Sync ke Prod* (push + which stations), *Import Manual* (pasted JSON), *Sumber Data* (the KCI API URLs for stations, schedules and train stops; local only) and *Riwayat* (log of every sync).
+Without Docker run the sidecar yourself (`pip install -r docker/kci-fetch/requirements.txt && python docker/kci-fetch/kci_fetch.py`, Debian/Ubuntu or another glibc system: `curl_cffi` has manylinux wheels, not musl/Alpine) and set `KCI_FETCH_PROXY_URL=http://127.0.0.1:8080`.
 
-**Manual import (JSON).** When even the local machine cannot reach KCI, Admin → Sinkronisasi → Import Manual accepts the pasted response of a KCI API call (`/schedules?stationid=…`, `/train-schedule?trainid=…` or `/stations`; `POST /api/v1/admin/sync/import`). It uses the same parsers and validation as a fetched response and works on the local machine and on the server. Schedules are stored for today for the chosen station (older days are removed); invalid JSON or an unexpected shape is reported next to the field. To send what was imported to prod, untick "Ambil data dari KCI dulu" before **Sync Data to Prod** (`POST /api/v1/admin/sync/prod` with `fetch: false`).
+**Where the data comes from.** **Admin → Sinkronisasi → Sync Data → Sync Sekarang** (`POST /api/v1/admin/sync/kci`, `SyncKciJob` on the queue) fetches the selected stations' timetable and train stops from KCI (through the sidecar) straight into the database, with a progress bar (fetch schedules → fetch train stops). Each run is a `kci_schedules` row in `sync_logs` (`trigger = manual` or `schedule`). The former local → production push ("Sync Data to Prod", `/api/v1/ingest/*`) has been removed.
 
-Setup: set `PROD_SYNC_URL` and `PROD_SYNC_TOKEN` in the local `backend/.env`, and the same secret as `SYNC_INGEST_TOKEN` in the server's `.env`. `kci:sync-stations` and `kci:sync-schedules` still exist as manual commands for the local machine (e.g. to load the station list the first time); they are not scheduled.
+**Automatic sync.** Admin → Sinkronisasi → Sync Data → *Sync otomatis*: any number of times of day (`HH:MM`, `APP_TIMEZONE`), e.g. `00:30` and `04:00`; an empty list switches it off (`GET/PUT/DELETE /api/v1/admin/settings/auto-sync`, stored in `settings`, default `KCI_AUTO_SYNC_TIMES`). `kci:auto-sync` runs every minute from the scheduler and queues the same job as the **Sync Sekarang** button. Each time slot runs once (`trigger = schedule` in `sync_logs`); a slot missed while the scheduler was down still starts up to `KCI_AUTO_SYNC_GRACE_MINUTES` (10) late; a time that is added after it already passed today waits for tomorrow; a slot that comes while another sync is running is skipped (logged). The panel warns when the scheduler has not called `kci:auto-sync` for a few minutes. The manual button keeps working at any time.
+
+**Admin → Sinkronisasi is a section with four sub menus:** *Sync Data* (Sync Sekarang, automatic times, which stations), *Import Manual* (pasted JSON), *Sumber Data* (the KCI API URLs for stations, schedules and train stops) and *Riwayat* (log of every sync).
+
+**Manual import (JSON).** When KCI cannot be reached, Admin → Sinkronisasi → Import Manual accepts the pasted response of a KCI API call (`/schedules?stationid=…`, `/train-schedule?trainid=…` or `/stations`; `POST /api/v1/admin/sync/import`). It uses the same parsers and validation as a fetched response. Schedules are stored for today for the chosen station (older days are removed); invalid JSON or an unexpected shape is reported next to the field.
+
+`kci:sync-stations` and `kci:sync-schedules` still exist as manual commands (e.g. to load the station list the first time). Note: seeding a fresh database runs a first KCI sync; with the sidecar that is a real sync of every active station and its trains (a few minutes).
 
 **Stations API URL.** The station sync reads the station list from a full URL, default `https://www.kci.id/api/krl/stations` (`KCI_STATIONS_API_URL`). Admins can change it in **Admin → Sinkronisasi → Sumber Data** (stored in the `settings` table, overrides `.env`), dry-run it with **Tes URL** (fetch + parse, nothing saved) or reset it to the default. An empty URL means "take the station list from the KCI client" (mock or `KCI_API_URL`). Optional bearer token: `KCI_STATIONS_API_TOKEN`.
 
