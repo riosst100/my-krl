@@ -447,3 +447,40 @@ Components only call functions from `lib/api/*`; no `fetch` calls are scattered 
 Favourite stations/routes/schedules and push/delay notifications can be added as new tables related to `users` and `stations`/`schedules`, exposed under `/api/v1/me/...` with `auth:sanctum` — the same endpoints will serve the Flutter app via bearer tokens.
 
 **Fresh data, no date picker.** After a successful sync via the Schedules API URL, every schedule row (and train stop) that the run did not write is deleted, so the tables only ever hold the latest timetable. The public site has no date selection: the API always serves the latest synced service date and ignores `?date=`.
+
+---
+
+## 9. CI/CD (GitHub Actions → VPS)
+
+Every push to `master` runs [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml): backend tests (PostgreSQL service) and frontend `tsc` + `eslint` + `next build`. Only if both pass does it SSH into the VPS, `git reset --hard origin/master` in `APP_DIR`, and run [`scripts/deploy.sh`](scripts/deploy.sh) (composer install `--no-dev`, `migrate --force`, `optimize`, `queue:restart`, optional php-fpm reload, `npm ci` + `next build`, `pm2 reload`). It can also be started by hand from the Actions tab (**Run workflow**).
+
+**GitHub settings** (Settings → Secrets and variables → Actions; the deploy job uses the `production` environment):
+
+| Kind | Name | Example |
+| --- | --- | --- |
+| Secret | `VPS_HOST` | `203.0.113.10` |
+| Secret | `VPS_USER` | `deploy` |
+| Secret | `VPS_SSH_KEY` | private key whose public key is in the VPS user's `~/.ssh/authorized_keys` |
+| Secret | `VPS_PORT` | optional, default `22` |
+| Variable | `APP_DIR` | `/var/www/my-krl` (git clone of this repo) |
+| Variable | `PHP_FPM_SERVICE` | optional, e.g. `php8.4-fpm` (reloaded with `sudo -n systemctl reload`) |
+| Variable | `PM2_APP_NAME` | optional, default `my-krl-frontend` |
+| Variable | `FRONTEND_PORT` | optional, default `3000` (used only when pm2 starts the app the first time) |
+
+**One-time VPS setup** (as the deploy user):
+
+```bash
+git clone https://github.com/riosst100/my-krl.git /var/www/my-krl   # private repo: use a deploy key
+cp backend/.env.example backend/.env          # APP_ENV=production, APP_DEBUG=false, DB_*, URLs, ADMIN_*
+php backend/artisan key:generate
+echo 'NEXT_PUBLIC_API_URL=https://api.example.com' >  frontend/.env.production
+echo 'API_INTERNAL_URL=http://127.0.0.1:8000'      >> frontend/.env.production
+bash scripts/deploy.sh                         # first deploy by hand; also starts the pm2 process
+pm2 startup                                    # follow the printed command so pm2 survives reboots
+```
+
+- nginx: the API vhost points `root` at `backend/public` (php-fpm); the frontend vhost proxies to `127.0.0.1:$FRONTEND_PORT`. The php-fpm user must be able to write `backend/storage` and `backend/bootstrap/cache`.
+- Queue worker: keep `php artisan queue:work --tries=1 --timeout=1800` running under supervisor or pm2; `queue:restart` makes it pick up new code.
+- Scheduler: cron `* * * * * cd /var/www/my-krl/backend && php artisan schedule:run >> /dev/null 2>&1`.
+- `NEXT_PUBLIC_*` values are baked in at build time, so changing `frontend/.env.production` needs a redeploy.
+- `git reset --hard` discards uncommitted changes in `APP_DIR`; the git-ignored `.env` files are kept.
