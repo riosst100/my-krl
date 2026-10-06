@@ -88,14 +88,15 @@ class AutoSyncTest extends TestCase
         Carbon::setTestNow('2026-10-06 03:00:00');
         Setting::put(Setting::AUTO_SYNC_TIMES, '04:00,16:30');
 
+        Setting::put(Setting::AUTO_SYNC_TYPES, 'schedules');
+
         $auto = app(AutoSyncService::class);
 
         Carbon::setTestNow('2026-10-06 03:59:00');
-        $this->assertNull($auto->runDue());
+        $this->assertSame([], $auto->runDue());
 
         Carbon::setTestNow('2026-10-06 04:00:20');
-        $log = $auto->runDue();
-        $this->assertNotNull($log);
+        [$log] = $auto->runDue();
         $this->assertSame('schedule', $log->trigger);
         $this->assertSame(SyncLog::TYPE_KCI_SCHEDULES, $log->type);
         Queue::assertPushed(SyncKciJob::class, fn ($job) => $job->syncLogId === $log->id);
@@ -103,15 +104,16 @@ class AutoSyncTest extends TestCase
         // Same slot again (the queued run is finished meanwhile): not started twice.
         $log->update(['status' => SyncStatus::Success]);
         Carbon::setTestNow('2026-10-06 04:01:00');
-        $this->assertNull($auto->runDue());
+        $this->assertSame([], $auto->runDue());
 
         // A missed minute (scheduler restarted) still runs within the grace period...
         Carbon::setTestNow('2026-10-06 16:38:00');
-        $this->assertNotNull($auto->runDue()?->update(['status' => SyncStatus::Success]));
+        $this->assertCount(1, $logs = $auto->runDue());
+        $logs[0]->update(['status' => SyncStatus::Success]);
 
         // ...but not after it.
         Carbon::setTestNow('2026-10-07 04:11:00');
-        $this->assertNull($auto->runDue());
+        $this->assertSame([], $auto->runDue());
 
         Queue::assertPushed(SyncKciJob::class, 2);
     }
@@ -122,7 +124,7 @@ class AutoSyncTest extends TestCase
         Carbon::setTestNow('2026-10-06 04:05:00');
         Setting::put(Setting::AUTO_SYNC_TIMES, '04:00');
 
-        $this->assertNull(app(AutoSyncService::class)->runDue());
+        $this->assertSame([], app(AutoSyncService::class)->runDue());
         Queue::assertNothingPushed();
     }
 
@@ -131,10 +133,11 @@ class AutoSyncTest extends TestCase
         Queue::fake();
         Carbon::setTestNow('2026-10-06 03:00:00');
         Setting::put(Setting::AUTO_SYNC_TIMES, '04:00');
+        Setting::put(Setting::AUTO_SYNC_TYPES, 'schedules');
 
         Carbon::setTestNow('2026-10-06 04:00:00');
         SyncLog::create(['type' => SyncLog::TYPE_KCI_SCHEDULES, 'status' => SyncStatus::Running, 'trigger' => 'manual', 'source' => 'http']);
-        $this->assertNull(app(AutoSyncService::class)->runDue());
+        $this->assertSame([], app(AutoSyncService::class)->runDue());
         Queue::assertNothingPushed();
     }
 
@@ -143,6 +146,7 @@ class AutoSyncTest extends TestCase
         Queue::fake();
         Carbon::setTestNow('2026-10-06 03:00:00');
         Setting::put(Setting::AUTO_SYNC_TIMES, '04:00');
+        Setting::put(Setting::AUTO_SYNC_TYPES, 'schedules');
 
         $this->artisan('kci:auto-sync')->assertSuccessful();
         Queue::assertNothingPushed();
@@ -159,6 +163,75 @@ class AutoSyncTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.last_run.id', $log->id)
             ->assertJsonPath('data.scheduler_running', true);
+    }
+
+    public function test_admin_chooses_which_kinds_the_automatic_sync_runs(): void
+    {
+        $this->admin()->getJson('/api/v1/admin/settings/auto-sync')
+            ->assertOk()
+            ->assertJsonPath('data.types', ['schedules', 'trains'])
+            ->assertJsonPath('data.default_types', ['schedules', 'trains']);
+
+        // Stored in run order, whatever order they were sent in.
+        $this->putJson('/api/v1/admin/settings/auto-sync', ['times' => ['04:00'], 'types' => ['trains', 'stations']])
+            ->assertOk()
+            ->assertJsonPath('data.types', ['stations', 'trains']);
+
+        $this->putJson('/api/v1/admin/settings/auto-sync', ['times' => ['04:00'], 'types' => []])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('types');
+        $this->putJson('/api/v1/admin/settings/auto-sync', ['times' => ['04:00'], 'types' => ['users']])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('types.0');
+
+        // Saving only the times keeps the chosen kinds.
+        $this->putJson('/api/v1/admin/settings/auto-sync', ['times' => ['05:00']])
+            ->assertOk()
+            ->assertJsonPath('data.types', ['stations', 'trains']);
+
+        $this->deleteJson('/api/v1/admin/settings/auto-sync')->assertOk()->assertJsonPath('data.types', ['schedules', 'trains']);
+    }
+
+    public function test_a_due_time_queues_each_chosen_kind_in_order(): void
+    {
+        Queue::fake();
+        Carbon::setTestNow('2026-10-06 03:00:00');
+        Setting::put(Setting::AUTO_SYNC_TIMES, '04:00');
+        Setting::put(Setting::AUTO_SYNC_TYPES, 'trains,stations,schedules');
+
+        Carbon::setTestNow('2026-10-06 04:00:00');
+        $logs = app(AutoSyncService::class)->runDue();
+
+        $this->assertSame(
+            [SyncLog::TYPE_KCI_STATIONS, SyncLog::TYPE_KCI_SCHEDULES, SyncLog::TYPE_KCI_TRAIN_STOPS],
+            array_map(fn (SyncLog $log) => $log->type, $logs),
+        );
+        Queue::assertPushed(SyncKciJob::class, 3);
+    }
+
+    public function test_each_kind_is_started_separately_by_hand(): void
+    {
+        Queue::fake();
+
+        $this->admin()->postJson('/api/v1/admin/sync/kci', ['type' => 'stations'])
+            ->assertAccepted()
+            ->assertJsonPath('data.type', SyncLog::TYPE_KCI_STATIONS);
+        $this->postJson('/api/v1/admin/sync/kci', ['type' => 'trains'])
+            ->assertAccepted()
+            ->assertJsonPath('data.type', SyncLog::TYPE_KCI_TRAIN_STOPS);
+
+        // One run per kind at a time; other kinds can still be queued behind it.
+        $this->postJson('/api/v1/admin/sync/kci', ['type' => 'trains'])->assertConflict();
+        $this->postJson('/api/v1/admin/sync/kci', ['type' => 'users'])->assertUnprocessable();
+
+        $this->getJson('/api/v1/admin/sync-logs?type=trains')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('meta.in_progress', true)
+            ->assertJsonPath('meta.last_sync.type', SyncLog::TYPE_KCI_TRAIN_STOPS);
+        $this->getJson('/api/v1/admin/sync-logs?type=schedules')
+            ->assertOk()
+            ->assertJsonPath('meta.in_progress', false);
     }
 
     public function test_admin_syncs_from_kci_with_progress(): void

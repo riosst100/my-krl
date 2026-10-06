@@ -11,8 +11,9 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Starting "Sync dari KCI" (SyncKciJob), by hand or at the configured times of
- * day (kci:auto-sync, every minute from the scheduler).
+ * Starting "Sync dari KCI" (SyncKciJob) for stations, schedules or train stops,
+ * by hand or at the configured times of day (kci:auto-sync, every minute from
+ * the scheduler) for the kinds chosen for the automatic sync.
  */
 class AutoSyncService
 {
@@ -31,6 +32,28 @@ class AutoSyncService
     public static function times(): array
     {
         return self::normalize(explode(',', (string) Setting::value(Setting::AUTO_SYNC_TIMES, (string) config('kci.auto_sync_times'))));
+    }
+
+    /**
+     * Kinds the automatic sync runs (keys of SyncLog::KCI_TYPES, in run order):
+     * the admin setting if saved, otherwise KCI_AUTO_SYNC_TYPES.
+     *
+     * @return list<string>
+     */
+    public static function types(): array
+    {
+        return self::normalizeTypes(explode(',', (string) Setting::value(Setting::AUTO_SYNC_TYPES, (string) config('kci.auto_sync_types'))));
+    }
+
+    /**
+     * @param  iterable<mixed>  $types
+     * @return list<string>
+     */
+    public static function normalizeTypes(iterable $types): array
+    {
+        $wanted = array_map(fn ($type) => strtolower(trim((string) $type)), [...$types]);
+
+        return array_values(array_filter(array_keys(SyncLog::KCI_TYPES), fn ($type) => in_array($type, $wanted, true)));
     }
 
     /**
@@ -57,16 +80,20 @@ class AutoSyncService
     }
 
     /**
-     * Queues a sync unless one is already queued or running.
+     * Queues a sync of one kind ("stations", "schedules" or "trains") unless one
+     * of that kind is already queued or running. The single queue worker runs
+     * queued syncs one after another, in the order they were started.
      */
-    public function start(string $trigger, ?int $userId): ?SyncLog
+    public function start(string $type, string $trigger, ?int $userId): ?SyncLog
     {
-        return Cache::lock('kci-sync:queue', 10)->block(5, function () use ($trigger, $userId) {
-            if (SyncLog::inProgress(SyncLog::TYPE_KCI_SCHEDULES)->exists()) {
+        $logType = SyncLog::KCI_TYPES[$type];
+
+        return Cache::lock('kci-sync:queue', 10)->block(5, function () use ($logType, $trigger, $userId) {
+            if (SyncLog::inProgress($logType)->exists()) {
                 return null;
             }
 
-            $log = $this->direct->createLog($userId, $trigger);
+            $log = $this->direct->createLog($logType, $userId, $trigger);
             SyncKciJob::dispatch($log->id);
 
             return $log;
@@ -74,11 +101,14 @@ class AutoSyncService
     }
 
     /**
-     * Called every minute by the scheduler: starts the sync when a configured
-     * time is due. A run that the scheduler missed (container restart) still
-     * starts up to KCI_AUTO_SYNC_GRACE_MINUTES late; each time slot runs once.
+     * Called every minute by the scheduler: starts the chosen kinds of sync when
+     * a configured time is due. A run that the scheduler missed (container
+     * restart) still starts up to KCI_AUTO_SYNC_GRACE_MINUTES late; each time
+     * slot runs once.
+     *
+     * @return list<SyncLog> the syncs that were queued
      */
-    public function runDue(?CarbonInterface $now = null): ?SyncLog
+    public function runDue(?CarbonInterface $now = null): array
     {
         $now = CarbonImmutable::instance($now ?? now());
         Cache::put(self::HEARTBEAT, $now->toIso8601String(), now()->addDay());
@@ -86,18 +116,23 @@ class AutoSyncService
         $slot = $this->dueSlot($now);
 
         if ($slot === null || ! Cache::add('kci-auto-sync:slot:'.$slot->format('Y-m-d H:i'), true, now()->addDays(2))) {
-            return null;
+            return [];
         }
 
-        $log = $this->start('schedule', null);
+        $logs = [];
 
-        if ($log === null) {
-            Log::warning('Automatic sync skipped: another synchronization is in progress', ['slot' => $slot->format('Y-m-d H:i')]);
-        } else {
-            Log::info('Automatic sync started', ['slot' => $slot->format('Y-m-d H:i'), 'log_id' => $log->id]);
+        foreach (self::types() as $type) {
+            $log = $this->start($type, 'schedule', null);
+
+            if ($log === null) {
+                Log::warning('Automatic sync skipped: another synchronization of this kind is in progress', ['slot' => $slot->format('Y-m-d H:i'), 'type' => $type]);
+            } else {
+                Log::info('Automatic sync started', ['slot' => $slot->format('Y-m-d H:i'), 'type' => $type, 'log_id' => $log->id]);
+                $logs[] = $log;
+            }
         }
 
-        return $log;
+        return $logs;
     }
 
     public function dueSlot(CarbonImmutable $now): ?CarbonImmutable

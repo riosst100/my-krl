@@ -98,7 +98,7 @@ export interface Paginated<T, M = object> {
 
 export type SyncStatus = "queued" | "running" | "success" | "partial" | "failed";
 
-export type SyncType = "kci_schedules" | "kci_stations" | "prod_push";
+export type SyncType = "kci_schedules" | "kci_stations" | "kci_train_stops" | "prod_push";
 
 export interface SyncProgress {
   phase: "fetch_schedules" | "fetch_stops" | "stations" | "push_schedules" | "push_stops";

@@ -13,9 +13,7 @@ class AutoSyncKci extends Command
 
     public function handle(AutoSyncService $auto): int
     {
-        $log = $auto->runDue();
-
-        if ($log) {
+        foreach ($auto->runDue() as $log) {
             $this->info("Sync #{$log->id} ({$log->type}) queued.");
         }
 

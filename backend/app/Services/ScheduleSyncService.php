@@ -9,7 +9,6 @@ use App\Models\Station;
 use App\Models\SyncLog;
 use App\Models\TrainLine;
 use App\Models\TrainStop;
-use App\Models\User;
 use App\Services\Concerns\FinishesSyncLog;
 use App\Services\Kci\Clients\KciUrlClient;
 use App\Services\Kci\Data\KciSchedule;
@@ -28,6 +27,7 @@ use Throwable;
  * Daily schedule sync: KCI → validate/transform (KciService) → upsert into
  * PostgreSQL. Station master data is synced separately (StationSyncService,
  * monthly); it is only bootstrapped here when the stations table is empty.
+ * Train stops are synced separately too (TrainStopSyncService::run).
  * Every run is recorded in sync_logs.
  */
 class ScheduleSyncService
@@ -46,7 +46,6 @@ class ScheduleSyncService
         private readonly KciService $kci,
         private readonly StationSyncService $stationSync,
         private readonly KciUrlClient $urlClient,
-        private readonly TrainStopSyncService $trainStops,
     ) {}
 
     /**
@@ -148,7 +147,7 @@ class ScheduleSyncService
 
     /**
      * @param  list<string>|null  $stationCodes  Only sync these station codes; null = KCI_SYNC_STATIONS (empty = all).
-     * @param  (callable(string $phase, int $done, int $total): void)|null  $progress  phase is "schedules" or "stops"
+     * @param  (callable(string $phase, int $done, int $total): void)|null  $progress  phase is "schedules"
      */
     public function run(SyncLog $log, ?CarbonInterface $from = null, ?int $days = null, ?array $stationCodes = null, ?callable $progress = null): SyncLog
     {
@@ -184,17 +183,11 @@ class ScheduleSyncService
             [$records, $stations, $failures] = $this->syncSchedules($dates, $only, $url, $progress);
             $this->refreshLineColors();
 
-            // Stops per train (for "to station" search). Only for real KCI train numbers.
-            $stops = $url !== '' ? $this->trainStops->sync($this->syncedTrainNumbers($from, $only), $from, $progress) : null;
-
             if ($url !== '') {
                 // The Schedules API only ever returns the current timetable: everything this
-                // run did not write is stale, so the tables end up fresh (a truncate that
-                // only happens once the new data is in).
+                // run did not write is stale, so the table ends up fresh (a truncate that
+                // only happens once the new data is in). Train stops have their own sync.
                 $pruned = $stations > 0 ? Schedule::where('updated_at', '<', $startedAt)->delete() : 0;
-                if ($stations > 0) {
-                    TrainStop::where('service_date', '!=', $from->toDateString())->delete();
-                }
             } else {
                 $cutoff = now()->subDays(config('kci.retention_days'))->toDateString();
                 $pruned = Schedule::where('service_date', '<', $cutoff)->delete();
@@ -208,22 +201,11 @@ class ScheduleSyncService
                     ...$log->meta,
                     'failed_stations' => array_slice($failures, 0, 50, true),
                     'pruned' => $pruned,
-                    'train_stops' => $stops ? [
-                        ...collect($stops)->except('failed')->all(),
-                        'failed' => count($stops['failed']),
-                        'failed_sample' => array_slice($stops['failed'], 0, 5, true),
-                    ] : null,
                 ],
             ]);
 
-            if ($failures === [] && ($stops === null || $stops['failed'] === [])) {
-                return $this->finish($log, SyncStatus::Success);
-            }
-
             if ($failures === []) {
-                $first = reset($stops['failed']);
-
-                return $this->finish($log, SyncStatus::Partial, count($stops['failed'])." train(s) without stop data. First error: {$first}");
+                return $this->finish($log, SyncStatus::Success);
             }
 
             $status = $stations > 0 ? SyncStatus::Partial : SyncStatus::Failed;
@@ -340,22 +322,6 @@ class ScheduleSyncService
         });
 
         return $rows->count();
-    }
-
-    /**
-     * Train numbers stored for the synced stations on the given date.
-     *
-     * @param  list<string>  $only
-     * @return Collection<int, string>
-     */
-    private function syncedTrainNumbers(CarbonInterface $date, array $only): Collection
-    {
-        return Schedule::query()
-            ->whereDate('service_date', $date->toDateString())
-            ->whereHas('station', fn ($q) => $q->active()->when($only !== [], fn ($s) => $s->whereIn('code', $only)))
-            ->distinct()
-            ->orderBy('train_number')
-            ->pluck('train_number');
     }
 
     /**

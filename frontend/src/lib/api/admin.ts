@@ -113,14 +113,17 @@ export function getAdminSchedules(filters: ScheduleFilters) {
 
 // --- Sync ------------------------------------------------------------------------
 
+/** The separate "Sync dari KCI" runs. */
+export type KciSyncType = "stations" | "schedules" | "trains";
+
 export interface SyncLogsMeta {
   in_progress: boolean;
-  /** The last "Sync dari KCI" (manual or automatic). */
+  /** The last "Sync dari KCI" (manual or automatic) of the requested type (default: schedules). */
   last_sync: SyncLog | null;
   last_successful_sync: SyncLog | null;
 }
 
-export function getSyncLogs(page = 1, type: "" | "schedules" | "stations" = "") {
+export function getSyncLogs(page = 1, type: "" | KciSyncType = "") {
   return apiFetch<Paginated<SyncLog, SyncLogsMeta>>("/admin/sync-logs", { query: { page, type } });
 }
 
@@ -219,8 +222,8 @@ export function getSyncRequests(logId: number, after = 0): Promise<SyncRequestsR
   return apiFetch<SyncRequestsResponse>(`/admin/sync-logs/${logId}/requests`, { query: { after } });
 }
 
-export async function triggerKciSync(): Promise<SyncLog> {
-  const res = await apiFetch<{ data: SyncLog }>("/admin/sync/kci", { method: "POST" });
+export async function triggerKciSync(type: KciSyncType): Promise<SyncLog> {
+  const res = await apiFetch<{ data: SyncLog }>("/admin/sync/kci", { method: "POST", body: { type } });
   return res.data;
 }
 
@@ -231,6 +234,10 @@ export interface AutoSyncSetting {
   times: string[];
   /** KCI_AUTO_SYNC_TIMES from the environment. */
   default_times: string[];
+  /** Kinds run at those times, in run order. */
+  types: KciSyncType[];
+  /** KCI_AUTO_SYNC_TYPES from the environment. */
+  default_types: KciSyncType[];
   is_default: boolean;
   timezone: string;
   next_run_at: string | null;
@@ -245,8 +252,8 @@ export async function getAutoSyncSetting(): Promise<AutoSyncSetting> {
   return (await apiFetch<{ data: AutoSyncSetting }>("/admin/settings/auto-sync")).data;
 }
 
-export async function saveAutoSyncTimes(times: string[]): Promise<AutoSyncSetting> {
-  return (await apiFetch<{ data: AutoSyncSetting }>("/admin/settings/auto-sync", { method: "PUT", body: { times } })).data;
+export async function saveAutoSyncTimes(times: string[], types: KciSyncType[]): Promise<AutoSyncSetting> {
+  return (await apiFetch<{ data: AutoSyncSetting }>("/admin/settings/auto-sync", { method: "PUT", body: { times, types } })).data;
 }
 
 export async function resetAutoSyncTimes(): Promise<AutoSyncSetting> {

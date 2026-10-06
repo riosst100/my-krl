@@ -18,6 +18,15 @@ class SyncLog extends Model
 
     public const TYPE_KCI_STATIONS = 'kci_stations';
 
+    public const TYPE_KCI_TRAIN_STOPS = 'kci_train_stops';
+
+    /** The separate "Sync dari KCI" runs, by API name, in the order they depend on each other. */
+    public const KCI_TYPES = [
+        'stations' => self::TYPE_KCI_STATIONS,
+        'schedules' => self::TYPE_KCI_SCHEDULES,
+        'trains' => self::TYPE_KCI_TRAIN_STOPS,
+    ];
+
     protected function casts(): array
     {
         return [

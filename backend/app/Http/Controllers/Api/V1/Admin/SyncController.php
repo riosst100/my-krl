@@ -6,42 +6,42 @@ use App\Enums\SyncStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\SyncLogResource;
 use App\Models\KciTimetableCheck;
+use App\Models\Station;
 use App\Models\SyncLog;
 use App\Models\SyncLogRequest;
 use App\Services\AutoSyncService;
 use App\Services\Kci\Clients\KciUrlClient;
-use App\Services\KciTimetableWatchService;
-use App\Models\Station;
 use App\Services\Kci\Exceptions\KciApiException;
+use App\Services\KciTimetableWatchService;
 use App\Services\ManualImportService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Response;
 use Illuminate\Support\Carbon;
+use Illuminate\Validation\Rule;
 
 class SyncController extends Controller
 {
+    /**
+     * GET /admin/sync-logs?type= — the meta describes "Sync dari KCI" (manual or
+     * automatic) of that type; without a type, of the schedules.
+     */
     public function index(Request $request): AnonymousResourceCollection
     {
         $request->validate([
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:100'],
-            'type' => ['sometimes', 'nullable', 'in:schedules,stations'],
+            'type' => ['sometimes', 'nullable', Rule::in(array_keys(SyncLog::KCI_TYPES))],
         ]);
 
-        $type = match ($request->input('type')) {
-            'schedules' => SyncLog::TYPE_KCI_SCHEDULES,
-            'stations' => SyncLog::TYPE_KCI_STATIONS,
-            default => null,
-        };
+        $type = SyncLog::KCI_TYPES[$request->input('type')] ?? null;
 
         $logs = SyncLog::with('triggeredBy')
             ->when($type, fn ($q) => $q->where('type', $type))
             ->latest('id')
             ->paginate($request->integer('per_page', 20));
 
-        // "The sync": Sync dari KCI, manual or automatic.
-        $syncs = fn () => SyncLog::query()->where('type', SyncLog::TYPE_KCI_SCHEDULES)->whereIn('trigger', ['manual', 'schedule']);
+        $syncs = fn () => SyncLog::query()->where('type', $type ?? SyncLog::TYPE_KCI_SCHEDULES)->whereIn('trigger', ['manual', 'schedule']);
         $last = $syncs()->with('triggeredBy')->latest('id')->first();
         $lastSuccess = $syncs()->whereIn('status', [SyncStatus::Success, SyncStatus::Partial])->latest('finished_at')->first();
 
@@ -119,12 +119,17 @@ class SyncController extends Controller
     }
 
     /**
-     * POST /admin/sync/kci — "Sync dari KCI": fetch the configured stations' timetable and
-     * train stops from KCI (through the kci-fetch sidecar) into this database. The queue
-     * worker runs it in the background; progress is on the sync log.
+     * POST /admin/sync/kci { "type": "stations" | "schedules" | "trains" } — "Sync dari KCI":
+     * fetch the station list, the configured stations' timetable, or the stops of their
+     * trains from KCI (through the kci-fetch sidecar) into this database. The queue worker
+     * runs it in the background; progress is on the sync log. Default type: schedules.
      */
     public function kci(Request $request, AutoSyncService $sync): JsonResponse
     {
+        $validated = $request->validate([
+            'type' => ['sometimes', Rule::in(array_keys(SyncLog::KCI_TYPES))],
+        ]);
+
         // KCI blocked this server recently: retrying now only prolongs the block.
         if ($until = KciUrlClient::blockedUntil()) {
             $message = 'KCI sedang memblokir server ini. Sinkronisasi dijeda sampai '.$until->timezone(config('app.timezone'))->format('H:i').'.';
@@ -136,7 +141,7 @@ class SyncController extends Controller
             ], Response::HTTP_TOO_MANY_REQUESTS);
         }
 
-        $log = $sync->start('manual', $request->user()->id);
+        $log = $sync->start($validated['type'] ?? 'schedules', 'manual', $request->user()->id);
 
         if (! $log) {
             return response()->json(['message' => 'A synchronization is already in progress.'], Response::HTTP_CONFLICT);

@@ -16,14 +16,14 @@ import {
   SelectField,
   TableSkeleton,
 } from "@/components/ui";
-import { getSyncLogs } from "@/lib/api/admin";
+import { getSyncLogs, type KciSyncType } from "@/lib/api/admin";
 import { errorMessage } from "@/lib/api/client";
 import { formatDateTime, formatNumber } from "@/lib/format";
 import { useApi } from "@/lib/hooks/useApi";
 
 export default function AdminSyncHistoryPage() {
   const [page, setPage] = useState(1);
-  const [type, setType] = useState<"" | "schedules" | "stations">("");
+  const [type, setType] = useState<"" | KciSyncType>("");
   const { data, error, loading, reload } = useApi(`sync|${page}|${type}`, () =>
     getSyncLogs(page, type),
   );
@@ -50,6 +50,7 @@ export default function AdminSyncHistoryPage() {
             <option value="">Semua</option>
             <option value="schedules">Jadwal</option>
             <option value="stations">Stasiun</option>
+            <option value="trains">Kereta</option>
           </SelectField>
         </div>
         {error ? (

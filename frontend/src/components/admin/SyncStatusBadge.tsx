@@ -22,6 +22,7 @@ export function SyncStatusBadge({ status }: { status: SyncStatus }) {
 export const SYNC_TYPE_LABELS: Record<string, string> = {
   kci_schedules: "Jadwal",
   kci_stations: "Stasiun",
+  kci_train_stops: "Kereta",
   prod_push: "Sync ke Prod",
 };
 

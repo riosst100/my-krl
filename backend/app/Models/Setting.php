@@ -21,6 +21,9 @@ class Setting extends Model
     /** Comma-separated times of day (HH:MM) for the automatic sync (overrides KCI_AUTO_SYNC_TIMES); "" = off. */
     public const AUTO_SYNC_TIMES = 'kci.auto_sync_times';
 
+    /** Comma-separated kinds the automatic sync runs: stations, schedules, trains (overrides KCI_AUTO_SYNC_TYPES). */
+    public const AUTO_SYNC_TYPES = 'kci.auto_sync_types';
+
     /** JSON map of KCI operational area id => name, e.g. {"0":"Jabodetabek","6":"Yogyakarta"}. */
     public const OPERATIONAL_AREAS = 'kci.operational_areas';
 

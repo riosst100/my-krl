@@ -113,6 +113,10 @@ return [
     // Admins can change them in the panel (settings table). Empty = no automatic sync.
     'auto_sync_times' => env('KCI_AUTO_SYNC_TIMES', ''),
 
+    // What the automatic sync runs, in this order: comma-separated "stations", "schedules", "trains".
+    // Admins can change it in the panel.
+    'auto_sync_types' => env('KCI_AUTO_SYNC_TYPES', 'schedules,trains'),
+
     // A scheduler that was down at the exact minute still starts a run this many minutes late.
     'auto_sync_grace_minutes' => (int) env('KCI_AUTO_SYNC_GRACE_MINUTES', 10),
 

@@ -8,6 +8,7 @@ import {
   getAutoSyncSetting,
   resetAutoSyncTimes,
   saveAutoSyncTimes,
+  type KciSyncType,
 } from "@/lib/api/admin";
 import { ApiError, errorMessage } from "@/lib/api/client";
 import { formatDateTimeLong } from "@/lib/format";
@@ -16,20 +17,48 @@ import { useApi } from "@/lib/hooks/useApi";
 const sameList = (a: string[], b: string[]) =>
   a.length === b.length && a.every((t, i) => t === b[i]);
 
-/** Admin → Sinkronisasi: times of day at which the sync runs by itself. */
+/** In run order: stations before schedules before the trains in them. */
+const TYPES: { type: KciSyncType; label: string }[] = [
+  { type: "stations", label: "Stasiun" },
+  { type: "schedules", label: "Jadwal" },
+  { type: "trains", label: "Kereta" },
+];
+
+const typeLabels = (types: KciSyncType[]) =>
+  TYPES.filter((t) => types.includes(t.type))
+    .map((t) => t.label)
+    .join(" → ");
+
+/**
+ * Admin → Sinkronisasi: times of day at which the sync runs by itself, and
+ * which kinds (stations, schedules, trains) it runs.
+ */
 export function AutoSyncPanel() {
   const { toast } = useToast();
   const setting = useApi("auto-sync-setting", () => getAutoSyncSetting());
 
   // null = untouched: show the saved times.
   const [draft, setDraft] = useState<string[] | null>(null);
+  const [typesDraft, setTypesDraft] = useState<KciSyncType[] | null>(null);
   const [newTime, setNewTime] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>();
 
   const current = setting.data;
   const times = draft ?? current?.times ?? [];
-  const dirty = current ? !sameList(times, current.times) : false;
+  const types = typesDraft ?? current?.types ?? [];
+  const dirty = current
+    ? !sameList(times, current.times) || !sameList(types, current.types)
+    : false;
+
+  const toggleType = (type: KciSyncType) => {
+    setTypesDraft(
+      TYPES.map((t) => t.type).filter((t) =>
+        t === type ? !types.includes(t) : types.includes(t),
+      ),
+    );
+    setError(undefined);
+  };
 
   const add = (e: FormEvent) => {
     e.preventDefault();
@@ -53,12 +82,16 @@ export function AutoSyncPanel() {
     try {
       await action();
       setDraft(null);
+      setTypesDraft(null);
       await setting.reload();
       toast(success, "success");
     } catch (err) {
       setError(
         err instanceof ApiError && err.isValidation
-          ? (err.field("times") ?? err.field("times.0") ?? err.message)
+          ? (err.field("times") ??
+              err.field("times.0") ??
+              err.field("types") ??
+              err.message)
           : errorMessage(err),
       );
     } finally {
@@ -80,10 +113,10 @@ export function AutoSyncPanel() {
         )}
       </div>
       <p className="mt-1 text-sm text-muted">
-        Menjalankan{" "}
-        <span className="font-medium text-slate-700">Sync dari KCI</span>{" "}
-        setiap hari pada jam yang dipilih ({current?.timezone ?? "Asia/Jakarta"}).
-        Tombol sync manual di atas tetap bisa dipakai kapan saja.
+        Menjalankan sync yang dicentang setiap hari pada jam yang dipilih (
+        {current?.timezone ?? "Asia/Jakarta"}), berurutan stasiun → jadwal →
+        kereta. Tombol sync manual di Sync Stasiun, Jadwal, dan Kereta tetap
+        bisa dipakai kapan saja.
       </p>
 
       {setting.loading && !current ? (
@@ -108,6 +141,33 @@ export function AutoSyncPanel() {
               </Alert>
             </div>
           )}
+
+          <fieldset className="mt-4">
+            <legend className="mb-1.5 text-sm font-medium text-slate-700">
+              Yang disinkronkan otomatis
+            </legend>
+            <div className="flex flex-wrap gap-x-5 gap-y-2">
+              {TYPES.map((t) => (
+                <label
+                  key={t.type}
+                  className="flex min-h-10 cursor-pointer items-center gap-2 text-sm text-ink"
+                >
+                  <input
+                    type="checkbox"
+                    checked={types.includes(t.type)}
+                    onChange={() => toggleType(t.type)}
+                    className="h-4 w-4 rounded accent-brand-600"
+                  />
+                  {t.label}
+                </label>
+              ))}
+            </div>
+            {types.length === 0 && (
+              <p className="mt-1 text-xs text-red-700">
+                Pilih minimal 1 jenis sync.
+              </p>
+            )}
+          </fieldset>
 
           <ul className="mt-4 flex flex-wrap gap-1.5" aria-label="Jadwal sync">
             {times.length === 0 && (
@@ -156,21 +216,24 @@ export function AutoSyncPanel() {
             <Button
               onClick={() =>
                 run(
-                  () => saveAutoSyncTimes(times),
+                  () => saveAutoSyncTimes(times, types),
                   times.length > 0
                     ? "Jadwal sync otomatis disimpan."
                     : "Sync otomatis dinonaktifkan.",
                 )
               }
               loading={saving}
-              disabled={!dirty}
+              disabled={!dirty || types.length === 0}
             >
               Simpan
             </Button>
             {dirty && (
               <Button
                 variant="ghost"
-                onClick={() => setDraft(null)}
+                onClick={() => {
+                  setDraft(null);
+                  setTypesDraft(null);
+                }}
                 disabled={saving}
               >
                 Batalkan perubahan
@@ -213,7 +276,7 @@ export function AutoSyncPanel() {
               <p>
                 Default (.env):{" "}
                 {current.default_times.length > 0
-                  ? current.default_times.join(", ")
+                  ? `${current.default_times.join(", ")} (${typeLabels(current.default_types)})`
                   : "nonaktif"}
                 {current.updated_at &&
                   ` · diubah ${formatDateTimeLong(current.updated_at)}${current.updated_by ? ` oleh ${current.updated_by}` : ""}`}

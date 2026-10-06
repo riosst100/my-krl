@@ -73,7 +73,7 @@ export function ScheduleSyncStatus() {
       </section>
 
       <Link
-        href="/admin/sync"
+        href="/admin/sync/jadwal"
         className="shrink-0 text-sm font-semibold text-brand-600 hover:underline"
       >
         Sync Data →

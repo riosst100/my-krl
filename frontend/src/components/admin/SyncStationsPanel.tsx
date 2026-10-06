@@ -23,8 +23,8 @@ import { useApi } from "@/lib/hooks/useApi";
 const sameSet = (a: string[], b: string[]) =>
   a.length === b.length && a.every((code) => b.includes(code));
 
-/** Admin → Sinkronisasi: which stations' timetables the schedule sync fetches. */
-export function SyncStationsPanel({ onChanged }: { onChanged: () => void }) {
+/** Admin → Configuration → Sync Configuration: which stations' timetables (and their trains) are synced. */
+export function SyncStationsPanel({ onChanged }: { onChanged?: () => void }) {
   const { toast } = useToast();
   const setting = useApi("sync-stations-setting", () =>
     getSyncStationsSetting(),
@@ -74,7 +74,7 @@ export function SyncStationsPanel({ onChanged }: { onChanged: () => void }) {
       setDraft(null);
       await setting.reload();
       toast(success, "success");
-      onChanged();
+      onChanged?.();
     } catch (err) {
       setError(
         err instanceof ApiError && err.isValidation
@@ -99,8 +99,9 @@ export function SyncStationsPanel({ onChanged }: { onChanged: () => void }) {
         )}
       </div>
       <p className="mt-1 text-sm text-muted">
-        Jadwal hanya diambil untuk stasiun yang dipilih. Makin banyak stasiun,
-        makin lama sinkronisasi dan makin banyak permintaan ke KCI.
+        Sync Jadwal dan Sync Kereta, manual maupun otomatis, hanya mengambil
+        data stasiun yang dipilih. Makin banyak stasiun, makin lama
+        sinkronisasi dan makin banyak permintaan ke KCI.
       </p>
 
       {setting.loading && !current ? (

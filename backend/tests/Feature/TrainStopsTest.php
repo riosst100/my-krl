@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Enums\SyncStatus;
 use App\Models\Setting;
 use App\Models\Station;
+use App\Models\SyncLog;
 use App\Models\TrainStop;
 use App\Models\User;
 use App\Services\Kci\Contracts\KciClient;
@@ -57,30 +58,73 @@ class TrainStopsTest extends TestCase
         ]);
     }
 
-    private function sync(): \App\Models\SyncLog
+    /** Sync Jadwal for THB, then Sync Kereta for its trains. */
+    private function sync(string $trigger = 'manual'): SyncLog
     {
-        $service = $this->app->make(ScheduleSyncService::class);
+        Setting::put(Setting::SYNC_STATIONS, 'THB');
+        $schedules = $this->app->make(ScheduleSyncService::class);
+        $schedules->run($schedules->createLog($trigger));
 
-        return $service->run($service->createLog('console'), now(), 1, ['THB']);
+        return $this->syncTrains($trigger);
     }
 
-    public function test_schedule_sync_also_stores_train_stops(): void
+    private function syncTrains(string $trigger = 'manual'): SyncLog
+    {
+        $trains = $this->app->make(TrainStopSyncService::class);
+
+        return $trains->run($trains->createLog($trigger));
+    }
+
+    public function test_train_sync_stores_the_stops_of_the_selected_stations_trains(): void
     {
         $log = $this->sync();
 
-        $this->assertSame(SyncStatus::Success, $log->status);
+        $this->assertSame(SyncLog::TYPE_KCI_TRAIN_STOPS, $log->type);
+        $this->assertSame(SyncStatus::Success, $log->status, (string) $log->error_message);
+        $this->assertSame(['THB'], $log->meta['stations']);
         $this->assertSame(['trains' => 2, 'fetched' => 2, 'skipped' => 0, 'stops' => 8, 'failed' => 0, 'failed_sample' => []], $log->meta['train_stops']);
         $this->assertSame(8, TrainStop::count());
         $this->assertSame('04:19:30', TrainStop::where('station_code', 'SUD')->value('time'));
     }
 
-    public function test_resync_skips_trains_whose_stops_are_known(): void
+    public function test_schedule_sync_no_longer_fetches_train_stops(): void
+    {
+        $schedules = $this->app->make(ScheduleSyncService::class);
+        $log = $schedules->run($schedules->createLog('manual'), now(), 1, ['THB']);
+
+        $this->assertSame(SyncStatus::Success, $log->status);
+        $this->assertSame(0, TrainStop::count());
+        Http::assertSentCount(1);
+    }
+
+    public function test_manual_resync_fetches_again_but_the_automatic_one_skips_known_trains(): void
     {
         $this->sync();
-        $log = $this->sync();
+        $this->assertSame(0, $this->syncTrains('manual')->meta['train_stops']['skipped']);
+        $this->assertSame(2, $this->syncTrains('schedule')->meta['train_stops']['skipped']);
 
-        $this->assertSame(2, $log->meta['train_stops']['skipped']);
-        Http::assertSentCount(1 + 2 + 1); // THB timetable per sync (x2), stops only once per train
+        Http::assertSentCount(1 + 2 + 2); // THB timetable once, stops twice per train
+    }
+
+    public function test_stops_of_trains_outside_the_selected_stations_are_removed(): void
+    {
+        $this->sync();
+        TrainStop::create(['service_date' => now()->toDateString(), 'train_number' => '9999', 'sequence' => 1, 'station_code' => 'MRI', 'time' => '05:00:00']);
+        TrainStop::create(['service_date' => now()->subDay()->toDateString(), 'train_number' => '5701C', 'sequence' => 1, 'station_code' => 'MRI', 'time' => '05:00:00']);
+
+        $this->syncTrains();
+
+        $this->assertSame(['1800A', '5701C'], TrainStop::distinct()->orderBy('train_number')->pluck('train_number')->all());
+        $this->assertSame(8, TrainStop::count());
+    }
+
+    public function test_train_sync_needs_schedules_first(): void
+    {
+        $log = $this->syncTrains();
+
+        $this->assertSame(SyncStatus::Failed, $log->status);
+        $this->assertStringContainsString('schedule sync first', $log->error_message);
+        Http::assertNothingSent();
     }
 
     public function test_to_station_returns_only_trains_stopping_there_later(): void
@@ -131,13 +175,14 @@ class TrainStopsTest extends TestCase
             ]);
     }
 
-    public function test_empty_stops_url_disables_stop_sync(): void
+    public function test_empty_stops_url_fails_the_train_sync(): void
     {
         Setting::put(Setting::TRAIN_STOPS_API_URL, '');
 
         $log = $this->sync();
 
-        $this->assertSame(0, $log->meta['train_stops']['fetched']);
+        $this->assertSame(SyncStatus::Failed, $log->status);
+        $this->assertStringContainsString('Train Stops API URL is not set', $log->error_message);
         $this->assertSame(0, TrainStop::count());
     }
 
