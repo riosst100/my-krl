@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\SyncStatus;
 use App\Models\SyncLog;
+use App\Services\Kci\KciRequestLog;
 
 /**
  * "Sync dari KCI": fetch the configured stations' timetable and train stops
@@ -20,7 +21,10 @@ class KciDirectSyncService
 
     private float $lastWrite = 0;
 
-    public function __construct(private readonly ScheduleSyncService $sync) {}
+    public function __construct(
+        private readonly ScheduleSyncService $sync,
+        private readonly KciRequestLog $requests,
+    ) {}
 
     public function createLog(?int $userId, string $trigger = 'manual'): SyncLog
     {
@@ -32,9 +36,16 @@ class KciDirectSyncService
 
     public function run(SyncLog $log): SyncLog
     {
-        $log = $this->sync->run($log, now(), null, null, function (string $phase, int $done, int $total) use ($log) {
-            $this->progress($log, $phase === 'stops' ? 'fetch_stops' : 'fetch_schedules', $done, $total);
-        });
+        // Every KCI request of this run is listed in the admin panel (Log request).
+        $this->requests->begin($log);
+
+        try {
+            $log = $this->sync->run($log, now(), null, null, function (string $phase, int $done, int $total) use ($log) {
+                $this->progress($log, $phase === 'stops' ? 'fetch_stops' : 'fetch_schedules', $done, $total);
+            });
+        } finally {
+            $this->requests->end();
+        }
 
         $log->update(['meta' => [...$log->meta, 'progress' => $this->progressMeta('fetch_stops', 1, 1, complete: $log->status !== SyncStatus::Failed)]]);
 

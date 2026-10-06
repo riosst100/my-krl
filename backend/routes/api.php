@@ -81,6 +81,7 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
 
             Route::get('sync-logs', [Admin\SyncController::class, 'index'])->name('sync.index');
             Route::get('sync-logs/{syncLog}', [Admin\SyncController::class, 'show'])->name('sync.show');
+            Route::get('sync-logs/{syncLog}/requests', [Admin\SyncController::class, 'requests'])->name('sync.requests');
             Route::get('kci-watch', [Admin\SyncController::class, 'watch'])->name('kci-watch');
             Route::post('sync/import', [Admin\SyncController::class, 'import'])->middleware('throttle:admin-sync')->name('sync.import');
             Route::post('sync/kci', [Admin\SyncController::class, 'kci'])->middleware('throttle:admin-sync')->name('sync.kci');

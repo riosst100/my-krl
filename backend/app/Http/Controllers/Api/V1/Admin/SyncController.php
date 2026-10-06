@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\SyncLogResource;
 use App\Models\KciTimetableCheck;
 use App\Models\SyncLog;
+use App\Models\SyncLogRequest;
 use App\Services\AutoSyncService;
 use App\Services\Kci\Clients\KciUrlClient;
 use App\Services\KciTimetableWatchService;
@@ -57,6 +58,37 @@ class SyncController extends Controller
     public function show(SyncLog $syncLog): SyncLogResource
     {
         return new SyncLogResource($syncLog->load('triggeredBy'));
+    }
+
+    /**
+     * GET /admin/sync-logs/{id}/requests?after= — the KCI requests of one sync run
+     * (URL + outcome, no body), oldest first. Poll with after = last seen id.
+     */
+    public function requests(Request $request, SyncLog $syncLog): JsonResponse
+    {
+        $request->validate(['after' => ['sometimes', 'integer', 'min:0']]);
+
+        $rows = SyncLogRequest::where('sync_log_id', $syncLog->id)
+            ->where('id', '>', $request->integer('after'))
+            ->orderBy('id')
+            ->limit(500)
+            ->get(['id', 'url', 'status_code', 'ok', 'message', 'duration_ms', 'created_at']);
+
+        $counts = SyncLogRequest::where('sync_log_id', $syncLog->id)
+            ->selectRaw('count(*) as total, count(*) filter (where ok) as ok_count')
+            ->first();
+
+        return response()->json([
+            'data' => $rows->map(fn (SyncLogRequest $row) => [
+                ...$row->only(['id', 'url', 'status_code', 'ok', 'message', 'duration_ms']),
+                'created_at' => $row->created_at->toIso8601String(),
+            ]),
+            'meta' => [
+                'total' => (int) $counts->total,
+                'ok' => (int) $counts->ok_count,
+                'failed' => (int) $counts->total - (int) $counts->ok_count,
+            ],
+        ]);
     }
 
     /**

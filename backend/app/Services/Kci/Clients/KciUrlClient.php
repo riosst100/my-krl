@@ -3,6 +3,7 @@
 namespace App\Services\Kci\Clients;
 
 use App\Services\Kci\Exceptions\KciApiException;
+use App\Services\Kci\KciRequestLog;
 use App\Services\Kci\Exceptions\KciBlockedException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
@@ -37,6 +38,8 @@ class KciUrlClient
 
     public const BLOCKED_UNTIL_KEY = 'kci:blocked-until';
 
+    public function __construct(private readonly KciRequestLog $requests) {}
+
     /**
      * When requests to KCI are paused after a block, else null.
      */
@@ -50,9 +53,11 @@ class KciUrlClient
     /**
      * @throws KciBlockedException
      */
-    private function ensureNotBlocked(): void
+    private function ensureNotBlocked(string $url): void
     {
         if ($until = self::blockedUntil()) {
+            $this->requests->record($url, false, message: 'Tidak dikirim: KCI memblokir server ini, request dijeda sampai '.$until->timezone(config('app.timezone'))->format('H:i'));
+
             throw KciBlockedException::coolingDown($until);
         }
     }
@@ -68,29 +73,35 @@ class KciUrlClient
 
     public function fetch(string $url, ?string $token = null): array
     {
-        $this->ensureNotBlocked();
+        $this->ensureNotBlocked($url);
 
         $request = $this->configure(Http::createPendingRequest(), $token)
             ->retry(config('kci.retries') + 1, 500, fn ($e) => $e instanceof ConnectionException, throw: false);
 
         for ($attempt = 0; ; $attempt++) {
+            $started = microtime(true);
+
             try {
                 $response = $request->get($this->target($url));
             } catch (ConnectionException $e) {
+                $this->requests->record($url, false, message: 'Tidak dapat terhubung: '.$e->getMessage(), seconds: microtime(true) - $started);
+
                 throw KciApiException::unavailable("cannot connect to {$url}: {$e->getMessage()}");
             }
 
-            if ($response->status() === 429 && $attempt >= self::MAX_RATE_LIMIT_RETRIES) {
+            if ($response->status() !== 429) {
+                return $this->decodeAndRecord($response, $url, microtime(true) - $started);
+            }
+
+            if ($attempt >= self::MAX_RATE_LIMIT_RETRIES) {
                 // Still rate limited after waiting: stop instead of queueing more requests.
                 $this->markBlocked();
+                $this->requests->record($url, false, 429, 'Rate limit KCI (HTTP 429) tidak reda, sync dihentikan', microtime(true) - $started);
 
                 throw KciBlockedException::unavailable("HTTP 429 from {$url} (rate limited by the provider: too many requests, try again later)");
             }
 
-            if ($response->status() !== 429) {
-                return $this->decode($response, $url);
-            }
-
+            $this->requests->record($url, false, 429, 'Rate limit KCI (HTTP 429), menunggu lalu coba lagi', microtime(true) - $started);
             $this->waitForRateLimit($response, $url);
         }
     }
@@ -109,7 +120,7 @@ class KciUrlClient
         $first = true;
 
         foreach (array_chunk($urls, max(1, $concurrency), preserve_keys: true) as $batch) {
-            $this->ensureNotBlocked();
+            $this->ensureNotBlocked(reset($batch));
             if (! $first && $delay > 0) {
                 Sleep::for($delay)->milliseconds();
             }
@@ -132,6 +143,8 @@ class KciUrlClient
                 try {
                     if (! $response instanceof Response) {
                         $reason = $response instanceof Throwable ? $response->getMessage() : 'no response';
+                        $this->requests->record($url, false, message: "Tidak dapat terhubung: {$reason}");
+
                         throw KciApiException::unavailable("cannot connect to {$url}: {$reason}");
                     }
 
@@ -140,7 +153,8 @@ class KciUrlClient
                         $remaining = $remaining === null ? (int) $header : min($remaining, (int) $header);
                     }
 
-                    $results[$key] = $this->decode($response, $url);
+                    $seconds = $response->handlerStats()['total_time'] ?? null;
+                    $results[$key] = $this->decodeAndRecord($response, $url, is_numeric($seconds) ? (float) $seconds : null);
                 } catch (KciBlockedException $e) {
                     throw $e;
                 } catch (KciApiException $e) {
@@ -187,6 +201,45 @@ class KciUrlClient
             ->timeout(config('kci.timeout'));
 
         return $token ? $request->withToken($token) : $request;
+    }
+
+    /**
+     * decode() plus one request-log line: the outcome, never the body.
+     *
+     * @throws KciApiException
+     */
+    private function decodeAndRecord(Response $response, string $url, ?float $seconds): array
+    {
+        try {
+            $json = $this->decode($response, $url);
+        } catch (KciApiException $e) {
+            $this->requests->record($url, false, $response->status(), $this->isCloudflareBlock($response)
+                ? 'Diblokir Cloudflare (cf-ray '.($response->header('cf-ray') ?: '-').')'
+                : $this->shortReason($e, $url), $seconds);
+
+            throw $e;
+        }
+
+        $rows = array_is_list($json) ? $json : ($json['data'] ?? null);
+        $upstream = $json['status'] ?? null;
+
+        if (is_numeric($upstream) && (int) $upstream !== 200) {
+            $this->requests->record($url, false, $response->status(), "KCI membalas status {$upstream}".(is_string($json['message'] ?? null) ? ': '.$json['message'] : ''), $seconds);
+        } else {
+            $this->requests->record($url, true, $response->status(), is_array($rows) ? 'OK · '.count($rows).' data' : 'OK', $seconds);
+        }
+
+        return $json;
+    }
+
+    /**
+     * The exception message without the generic prefix and the (already logged) URL.
+     */
+    private function shortReason(KciApiException $e, string $url): string
+    {
+        $message = preg_replace('/^KCI API (unavailable|returned an invalid response): /', '', $e->getMessage());
+
+        return trim(str_replace([" from {$url}", " for {$url}", "{$url}: ", $url], '', $message));
     }
 
     /**

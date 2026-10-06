@@ -198,6 +198,27 @@ export async function testSchedulesApiUrl(url: string, station?: string): Promis
 }
 
 /** "Sync dari KCI": fetch from KCI straight into the database (runs in the background). */
+export interface SyncRequestRow {
+  id: number;
+  url: string;
+  status_code: number | null;
+  ok: boolean;
+  /** Outcome, e.g. "OK · 120 data" or "Diblokir Cloudflare (cf-ray …)". Never the body. */
+  message: string | null;
+  duration_ms: number | null;
+  created_at: string;
+}
+
+export interface SyncRequestsResponse {
+  data: SyncRequestRow[];
+  meta: { total: number; ok: number; failed: number };
+}
+
+/** KCI requests of one sync run, oldest first; pass the last seen id as `after` to poll. */
+export function getSyncRequests(logId: number, after = 0): Promise<SyncRequestsResponse> {
+  return apiFetch<SyncRequestsResponse>(`/admin/sync-logs/${logId}/requests`, { query: { after } });
+}
+
 export async function triggerKciSync(): Promise<SyncLog> {
   const res = await apiFetch<{ data: SyncLog }>("/admin/sync/kci", { method: "POST" });
   return res.data;

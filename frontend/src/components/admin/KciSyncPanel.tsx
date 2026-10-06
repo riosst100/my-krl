@@ -5,6 +5,7 @@ import {
   SyncStatusBadge,
   TRIGGER_LABELS,
 } from "@/components/admin/SyncStatusBadge";
+import { SyncRequestLog } from "@/components/admin/SyncRequestLog";
 import { Alert, Button, Card, Skeleton } from "@/components/ui";
 import { useToast } from "@/components/ui/Toast";
 import { triggerKciSync, type SyncLogsMeta } from "@/lib/api/admin";
@@ -90,6 +91,7 @@ export function KciSyncPanel({
           lastSuccessAt={meta.last_successful_sync?.finished_at ?? null}
         />
       )}
+      {last && <SyncRequestLog key={last.id} logId={last.id} running={running} />}
     </Card>
   );
 }
