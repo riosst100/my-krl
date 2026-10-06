@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Local (Docker Compose) counterpart of deploy.sh: bring the dev stack up to date
 # after pulling new code. Everything runs inside the containers, so the host
-# needs no PHP extensions or Node. Run from anywhere: bash scripts/deploy-local.sh
+# needs no PHP extensions or Node. Run from anywhere: ./deploy-local.sh
 set -euo pipefail
 
-ROOT=$(cd "$(dirname "$0")/.." && pwd)
+ROOT=$(cd "$(dirname "$0")" && pwd)
 cd "$ROOT"
 log() { printf '\n==> %s\n' "$*"; }
 dc() { docker compose "$@"; }
