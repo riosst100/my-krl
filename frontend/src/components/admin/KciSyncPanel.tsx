@@ -45,7 +45,9 @@ export function KciSyncPanel({
       toast(
         err instanceof ApiError && err.status === 409
           ? "Sinkronisasi lain sedang berjalan."
-          : errorMessage(err),
+          : err instanceof ApiError && err.status === 429 && err.errors.kci?.[0]
+            ? err.errors.kci[0]
+            : errorMessage(err),
         "error",
       );
     } finally {

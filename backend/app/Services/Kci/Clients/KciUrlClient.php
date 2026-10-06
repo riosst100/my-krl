@@ -3,6 +3,9 @@
 namespace App\Services\Kci\Clients;
 
 use App\Services\Kci\Exceptions\KciApiException;
+use App\Services\Kci\Exceptions\KciBlockedException;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Pool;
@@ -23,13 +26,50 @@ use Throwable;
  * KCI_FETCH_PROXY_URL is set every request goes through the kci-fetch sidecar
  * (docker/kci-fetch, curl_cffi with a browser fingerprint). It passes the
  * upstream status, body and rate-limit headers through unchanged.
+ *
+ * Once KCI blocks this server, requests stop for kci.block_cooldown_minutes
+ * (KciBlockedException without touching the network): hammering a block only
+ * makes it last longer.
  */
 class KciUrlClient
 {
     private const MAX_RATE_LIMIT_RETRIES = 2;
 
+    public const BLOCKED_UNTIL_KEY = 'kci:blocked-until';
+
+    /**
+     * When requests to KCI are paused after a block, else null.
+     */
+    public static function blockedUntil(): ?Carbon
+    {
+        $until = Cache::get(self::BLOCKED_UNTIL_KEY);
+
+        return $until && Carbon::parse($until)->isFuture() ? Carbon::parse($until) : null;
+    }
+
+    /**
+     * @throws KciBlockedException
+     */
+    private function ensureNotBlocked(): void
+    {
+        if ($until = self::blockedUntil()) {
+            throw KciBlockedException::coolingDown($until);
+        }
+    }
+
+    private function markBlocked(): void
+    {
+        $minutes = (int) config('kci.block_cooldown_minutes');
+
+        if ($minutes > 0) {
+            Cache::put(self::BLOCKED_UNTIL_KEY, now()->addMinutes($minutes)->toIso8601String(), now()->addMinutes($minutes));
+        }
+    }
+
     public function fetch(string $url, ?string $token = null): array
     {
+        $this->ensureNotBlocked();
+
         $request = $this->configure(Http::createPendingRequest(), $token)
             ->retry(config('kci.retries') + 1, 500, fn ($e) => $e instanceof ConnectionException, throw: false);
 
@@ -40,7 +80,14 @@ class KciUrlClient
                 throw KciApiException::unavailable("cannot connect to {$url}: {$e->getMessage()}");
             }
 
-            if ($response->status() !== 429 || $attempt >= self::MAX_RATE_LIMIT_RETRIES) {
+            if ($response->status() === 429 && $attempt >= self::MAX_RATE_LIMIT_RETRIES) {
+                // Still rate limited after waiting: stop instead of queueing more requests.
+                $this->markBlocked();
+
+                throw KciBlockedException::unavailable("HTTP 429 from {$url} (rate limited by the provider: too many requests, try again later)");
+            }
+
+            if ($response->status() !== 429) {
                 return $this->decode($response, $url);
             }
 
@@ -58,17 +105,29 @@ class KciUrlClient
     public function fetchMany(array $urls, ?string $token = null, int $concurrency = 5): array
     {
         $results = [];
+        $delay = (int) config('kci.request_delay_ms');
+        $first = true;
 
         foreach (array_chunk($urls, max(1, $concurrency), preserve_keys: true) as $batch) {
+            $this->ensureNotBlocked();
+            if (! $first && $delay > 0) {
+                Sleep::for($delay)->milliseconds();
+            }
+            $first = false;
+
             $responses = Http::pool(fn (Pool $pool) => array_map(
                 fn (string $key) => $this->configure($pool->as($key), $token)->get($this->target($batch[$key])),
                 array_keys($batch),
             ));
 
             $remaining = null;
+            $limited = null;
 
             foreach ($batch as $key => $url) {
                 $response = $responses[$key] ?? null;
+                if ($response instanceof Response && $response->status() === 429) {
+                    $limited = $response;
+                }
 
                 try {
                     if (! $response instanceof Response) {
@@ -82,13 +141,17 @@ class KciUrlClient
                     }
 
                     $results[$key] = $this->decode($response, $url);
+                } catch (KciBlockedException $e) {
+                    throw $e;
                 } catch (KciApiException $e) {
                     $results[$key] = $e;
                 }
             }
 
-            // Pause before the next batch would run out of quota.
-            if ($remaining !== null && $remaining < $concurrency) {
+            if ($limited) {
+                // These are retried one by one by the caller; give the quota time to refill first.
+                $this->waitForRateLimit($limited, (string) $limited->effectiveUri());
+            } elseif ($remaining !== null && $remaining < $concurrency) {
                 Log::info('KCI rate limit almost reached, pausing', ['remaining' => $remaining]);
                 Sleep::for(config('kci.rate_limit_pause_seconds'))->seconds();
             }
@@ -136,13 +199,20 @@ class KciUrlClient
             $reason = (string) ($response->json('message') ?? $response->header('X-Kci-Fetch-Error'));
             Log::warning('KCI request failed in kci-fetch', ['url' => $url, 'error' => $response->header('X-Kci-Fetch-Error'), 'status' => $response->json('status'), 'cf_ray' => $response->json('cf_ray')]);
 
+            if (in_array($response->json('status'), [403, 429, 503], true)) {
+                $this->markBlocked();
+
+                throw KciBlockedException::unavailable("{$url}: {$reason}");
+            }
+
             throw KciApiException::unavailable("{$url}: {$reason}");
         }
 
         if ($this->isCloudflareBlock($response)) {
             Log::warning('KCI request blocked by Cloudflare', ['url' => $url, 'status' => $response->status(), 'cf_ray' => $response->header('cf-ray')]);
+            $this->markBlocked();
 
-            throw KciApiException::unavailable("HTTP {$response->status()} from {$url} (blocked by Cloudflare: the provider does not allow automated requests from this client"
+            throw KciBlockedException::unavailable("HTTP {$response->status()} from {$url} (blocked by Cloudflare: the provider does not allow automated requests from this client"
                 .(config('kci.fetch_proxy_url') ? '' : '; set KCI_FETCH_PROXY_URL to the kci-fetch service').', cf-ray '.($response->header('cf-ray') ?: '-').')');
         }
 

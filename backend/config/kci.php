@@ -24,8 +24,12 @@ return [
 
     'retries' => (int) env('KCI_RETRIES', 2),
 
-    // Pause between per-station requests to avoid hammering the upstream API.
-    'request_delay_ms' => (int) env('KCI_REQUEST_DELAY_MS', 200),
+    // Pause between requests (per station, and between train-stop batches) to avoid hammering the upstream API.
+    'request_delay_ms' => (int) env('KCI_REQUEST_DELAY_MS', 1000),
+
+    // After KCI blocks this server (Cloudflare 403, or 429 that did not clear), send
+    // no request to KCI for this many minutes. 0 = no pause.
+    'block_cooldown_minutes' => (int) env('KCI_BLOCK_COOLDOWN_MINUTES', 30),
 
     /*
     |--------------------------------------------------------------------------
@@ -67,7 +71,7 @@ return [
     'train_stops_api_token' => env('KCI_TRAIN_STOPS_API_TOKEN'),
 
     // Parallel requests for train stops (the upstream takes several seconds per train).
-    'train_stops_concurrency' => (int) env('KCI_TRAIN_STOPS_CONCURRENCY', 5),
+    'train_stops_concurrency' => (int) env('KCI_TRAIN_STOPS_CONCURRENCY', 2),
 
     // KCI allows ~60 requests per window: wait this long on HTTP 429 (without
     // Retry-After) or when the remaining quota is nearly used up.
@@ -113,6 +117,7 @@ return [
     'auto_sync_grace_minutes' => (int) env('KCI_AUTO_SYNC_GRACE_MINUTES', 10),
 
     // A queued/running sync older than this is treated as stale (crashed worker).
-    'stale_after_minutes' => (int) env('KCI_SYNC_STALE_MINUTES', 30),
+    // A full sync with the polite request delays takes ~20-30 minutes.
+    'stale_after_minutes' => (int) env('KCI_SYNC_STALE_MINUTES', 60),
 
 ];

@@ -79,6 +79,7 @@ class KciTimetableWatchTest extends TestCase
 
         $this->artisan('kci:watch-timetable')->assertSuccessful();
         $this->artisan('kci:watch-timetable')->assertFailed();
+        $this->travel(config('kci.block_cooldown_minutes') + 1)->minutes(); // KCI requests pause after a block
         $this->artisan('kci:watch-timetable')->assertSuccessful();
 
         $this->assertSame([true, false, true], KciTimetableCheck::orderBy('id')->pluck('ok')->all());

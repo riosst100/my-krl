@@ -14,6 +14,7 @@ use App\Services\Concerns\FinishesSyncLog;
 use App\Services\Kci\Clients\KciUrlClient;
 use App\Services\Kci\Data\KciSchedule;
 use App\Services\Kci\Exceptions\KciApiException;
+use App\Services\Kci\Exceptions\KciBlockedException;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Collection;
@@ -286,6 +287,9 @@ class ScheduleSyncService
                 }
 
                 $succeeded++;
+            } catch (KciBlockedException $e) {
+                // Every remaining station would be refused too.
+                throw $e;
             } catch (KciApiException $e) {
                 $failures[$station->code] = $e->getMessage();
                 Log::warning('KCI schedule sync failed for station', ['station' => $station->code, 'error' => $e->getMessage()]);

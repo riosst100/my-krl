@@ -8,6 +8,7 @@ use App\Http\Resources\SyncLogResource;
 use App\Models\KciTimetableCheck;
 use App\Models\SyncLog;
 use App\Services\AutoSyncService;
+use App\Services\Kci\Clients\KciUrlClient;
 use App\Services\KciTimetableWatchService;
 use App\Models\Station;
 use App\Services\Kci\Exceptions\KciApiException;
@@ -92,6 +93,17 @@ class SyncController extends Controller
      */
     public function kci(Request $request, AutoSyncService $sync): JsonResponse
     {
+        // KCI blocked this server recently: retrying now only prolongs the block.
+        if ($until = KciUrlClient::blockedUntil()) {
+            $message = 'KCI sedang memblokir server ini. Sinkronisasi dijeda sampai '.$until->timezone(config('app.timezone'))->format('H:i').'.';
+
+            return response()->json([
+                'message' => $message,
+                'errors' => ['kci' => [$message]],
+                'blocked_until' => $until->toIso8601String(),
+            ], Response::HTTP_TOO_MANY_REQUESTS);
+        }
+
         $log = $sync->start('manual', $request->user()->id);
 
         if (! $log) {

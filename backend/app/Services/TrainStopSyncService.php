@@ -7,6 +7,7 @@ use App\Models\Station;
 use App\Models\TrainStop;
 use App\Services\Kci\Clients\KciUrlClient;
 use App\Services\Kci\Exceptions\KciApiException;
+use App\Services\Kci\Exceptions\KciBlockedException;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -83,6 +84,7 @@ class TrainStopSyncService
 
         // The upstream answers slowly (several seconds per train): fetch in
         // small parallel batches, then retry failures once, one at a time.
+        // A block (KciBlockedException) aborts the whole run.
         foreach ($pending->chunk($concurrency * 4) as $chunk) {
             try {
                 $urls = $chunk->mapWithKeys(fn (string $train) => [$train => self::urlForTrain($url, $train)])->all();
@@ -102,6 +104,8 @@ class TrainStopSyncService
 
                     $result['stops'] += $this->store($serviceDate, $train, $this->parse($payload, $train), $stationIds);
                     $result['fetched']++;
+                } catch (KciBlockedException $e) {
+                    throw $e;
                 } catch (KciApiException $e) {
                     $result['failed'][$train] = $e->getMessage();
                     Log::warning('KCI train stops failed', ['train' => $train, 'error' => $e->getMessage()]);
