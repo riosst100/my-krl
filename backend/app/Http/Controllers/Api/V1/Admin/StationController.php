@@ -13,8 +13,6 @@ use App\Services\AdminStationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
-use Illuminate\Http\Response;
-use Illuminate\Support\Carbon;
 
 class StationController extends Controller
 {
@@ -30,6 +28,9 @@ class StationController extends Controller
             ->search($request->input('search'))
             ->when($request->input('status'), fn ($q, $status) => $q->where('is_active', $status === 'active'))
             ->withCount(['schedules' => fn ($q) => $q->whereDate('service_date', now()->toDateString())])
+            // Most trains today first, then the most recently synced; never-synced stations last.
+            ->orderByDesc('schedules_count')
+            ->orderByRaw('schedules_synced_at DESC NULLS LAST')
             ->orderBy('name')
             ->paginate($request->integer('per_page', 50))
             ->withQueryString();

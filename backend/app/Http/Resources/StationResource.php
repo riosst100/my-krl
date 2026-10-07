@@ -25,6 +25,8 @@ class StationResource extends JsonResource
             'kci_enabled' => $this->kci_enabled,
             'is_active' => $this->is_active,
             'synced_at' => $this->synced_at?->toIso8601String(),
+            // Last timetable sync of this station (null = never synced).
+            'schedules_synced_at' => $this->schedules_synced_at?->toIso8601String(),
             'schedules_count' => $this->whenCounted('schedules'),
             'updated_at' => $this->updated_at?->toIso8601String(),
         ];

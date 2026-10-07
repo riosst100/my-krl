@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['code', 'name', 'slug', 'latitude', 'longitude', 'operational_area', 'kci_enabled', 'is_active', 'synced_at'])]
+#[Fillable(['code', 'name', 'slug', 'latitude', 'longitude', 'operational_area', 'kci_enabled', 'is_active', 'synced_at', 'schedules_synced_at'])]
 class Station extends Model
 {
     use HasFactory;
@@ -20,6 +20,7 @@ class Station extends Model
             'kci_enabled' => 'boolean',
             'operational_area' => 'integer',
             'synced_at' => 'datetime',
+            'schedules_synced_at' => 'datetime',
             'latitude' => 'float',
             'longitude' => 'float',
         ];

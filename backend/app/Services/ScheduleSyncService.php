@@ -86,6 +86,8 @@ class ScheduleSyncService
                 ->whereDate('service_date', $serviceDate)
                 ->whereNotIn('train_number', $rows->pluck('train_number')->all() ?: [''])
                 ->delete();
+
+            $station->forceFill(['schedules_synced_at' => now()])->save();
         });
 
         return $rows->count();

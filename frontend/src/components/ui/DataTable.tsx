@@ -26,6 +26,7 @@ export function DataTable<T>({
   rowKey,
   busy,
   caption,
+  rowClassName,
 }: {
   columns: Column<T>[];
   rows: T[];
@@ -33,6 +34,8 @@ export function DataTable<T>({
   /** Dims the rows while a new page/filter is loading. */
   busy?: boolean;
   caption?: string;
+  /** Extra classes for one row (card on phones), e.g. to grey it out. */
+  rowClassName?: (row: T) => string | undefined;
 }) {
   const title = columns.find((c) => c.mobile === "title");
   const actions = columns.filter((c) => c.mobile === "action");
@@ -43,7 +46,7 @@ export function DataTable<T>({
       {/* Phones: cards */}
       <ul className="divide-y divide-line md:hidden">
         {rows.map((row) => (
-          <li key={rowKey(row)} className="px-4 py-3.5">
+          <li key={rowKey(row)} className={cx("px-4 py-3.5", rowClassName?.(row))}>
             {title && (
               <div className="text-[15px] font-semibold leading-snug text-ink">
                 {title.cell(row)}
@@ -92,7 +95,7 @@ export function DataTable<T>({
           </thead>
           <tbody className="divide-y divide-line">
             {rows.map((row) => (
-              <tr key={rowKey(row)} className="align-top">
+              <tr key={rowKey(row)} className={cx("align-top", rowClassName?.(row))}>
                 {columns.map((c) => (
                   <td key={c.key} className={cx("px-4 py-3", c.className)}>
                     {c.cell(row)}

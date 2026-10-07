@@ -2,10 +2,13 @@
 
 namespace Tests\Feature;
 
+use App\Models\Schedule;
 use App\Models\Station;
 use App\Models\User;
 use App\Services\Kci\Contracts\KciClient;
+use App\Services\Kci\Data\KciSchedule;
 use App\Services\KciService;
+use App\Services\ScheduleCarryForwardService;
 use App\Services\ScheduleSyncService;
 use App\Services\StationSyncService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -71,5 +74,32 @@ class StationSyncTest extends TestCase
         $this->getJson('/api/v1/admin/stations')
             ->assertOk()
             ->assertJsonStructure(['meta' => ['last_station_sync', 'station_sync_in_progress']]);
+    }
+
+    public function test_station_list_puts_the_busiest_and_most_recently_synced_stations_first(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $sync = $this->app->make(ScheduleSyncService::class);
+        $make = fn (string $code) => Station::create(['code' => $code, 'name' => "Stasiun {$code}", 'slug' => strtolower($code)]);
+        [$a, $b, $c, $never] = [$make('AAA'), $make('BBB'), $make('CCC'), $make('NEV')];
+        $rows = fn (int $n) => collect(range(1, $n))->map(fn (int $i) => new KciSchedule("T{$i}", 'COMMUTER LINE X', '#123456', null, 'TUJUAN', sprintf('05:%02d:00', $i), null));
+
+        $this->travelTo(now()->subHour());
+        $sync->persist($b, now(), $rows(2));
+        $this->travelBack();
+        $sync->persist($c, now(), $rows(2));
+        $sync->persist($a, now(), $rows(5));
+        // A carried-forward copy is not a sync: NEV stays "never synced".
+        Schedule::create(['station_id' => $never->id, 'train_number' => 'OLD', 'destination' => 'X', 'departure_time' => '05:00:00', 'service_date' => now()->subDay()->toDateString()]);
+        $this->app->make(ScheduleCarryForwardService::class)->carryForward(now());
+
+        $response = $this->actingAs($admin, 'admin')->fromFrontend()
+            ->getJson('/api/v1/admin/stations?per_page=200')
+            ->assertOk();
+
+        $codes = collect($response->json('data'))->pluck('code')->all();
+        $this->assertSame(['AAA', 'CCC', 'BBB', 'NEV'], array_slice($codes, 0, 4), 'most trains today, then the latest sync; never synced last among equals');
+        $this->assertNull($response->json('data.3.schedules_synced_at'));
+        $this->assertNotNull($response->json('data.0.schedules_synced_at'));
     }
 }

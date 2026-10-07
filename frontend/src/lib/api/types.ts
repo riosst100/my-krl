@@ -25,6 +25,8 @@ export interface Station {
   /** Admin-controlled visibility on the public site. */
   is_active: boolean;
   synced_at: string | null;
+  /** Last timetable sync of this station (krl-sync or an import); null = never synced. */
+  schedules_synced_at: string | null;
   schedules_count?: number;
   updated_at: string | null;
 }

@@ -19,7 +19,7 @@ import { useToast } from "@/components/ui/Toast";
 import { getAdminStations, setStationActive } from "@/lib/api/admin";
 import { errorMessage } from "@/lib/api/client";
 import type { Station } from "@/lib/api/types";
-import { formatNumber } from "@/lib/format";
+import { formatDateTime, formatNumber } from "@/lib/format";
 import { useApi } from "@/lib/hooks/useApi";
 import { useDebounced } from "@/lib/hooks/useDebounced";
 
@@ -67,7 +67,7 @@ export default function AdminStationsPage() {
     <>
       <PageHeader
         title="Stasiun"
-        description="Data master stasiun. Stasiun nonaktif tidak tampil di situs publik dan tidak disinkronkan jadwalnya."
+        description="Data master stasiun, urut dari jadwal hari ini terbanyak lalu yang terakhir disinkronkan. Stasiun abu-abu belum pernah disinkronkan. Stasiun nonaktif tidak tampil di situs publik."
       />
 
       <div className="mb-4 grid gap-4 sm:grid-cols-[1fr_200px]">
@@ -109,6 +109,9 @@ export default function AdminStationsPage() {
               rows={data.data}
               rowKey={(s) => s.id}
               caption="Daftar stasiun"
+              rowClassName={(s) =>
+                s.schedules_synced_at ? undefined : "bg-slate-50 opacity-50"
+              }
               columns={[
                 {
                   key: "name",
@@ -146,6 +149,19 @@ export default function AdminStationsPage() {
                   header: "Jadwal hari ini",
                   className: "tabular text-slate-600",
                   cell: (s) => formatNumber(s.schedules_count ?? 0),
+                },
+                {
+                  key: "synced",
+                  header: "Terakhir sync",
+                  className: "whitespace-nowrap tabular text-slate-600",
+                  cell: (s) =>
+                    s.schedules_synced_at ? (
+                      <time dateTime={s.schedules_synced_at}>
+                        {formatDateTime(s.schedules_synced_at)}
+                      </time>
+                    ) : (
+                      "Belum pernah"
+                    ),
                 },
                 {
                   key: "kci",
