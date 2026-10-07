@@ -40,6 +40,15 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
     Route::get('schedules/trains/{trainNumber}/stops', [V1\ScheduleController::class, 'trainStops'])->where('trainNumber', '[A-Za-z0-9]+')->name('schedules.train-stops');
     Route::get('schedules/upcoming', [V1\ScheduleController::class, 'upcoming'])->name('schedules.upcoming');
 
+    // --- Data pushed by krl-sync on Vercel (shared-secret token, see SYNC_INGEST_TOKEN) --
+    Route::prefix('ingest')->name('ingest.')->middleware('ingest')->group(function () {
+        Route::get('config', [V1\IngestController::class, 'config'])->name('config');
+        Route::post('start', [V1\IngestController::class, 'start'])->name('start');
+        Route::post('stations', [V1\IngestController::class, 'stations'])->name('stations');
+        Route::post('schedules', [V1\IngestController::class, 'schedules'])->name('schedules');
+        Route::post('stops', [V1\IngestController::class, 'stops'])->name('stops');
+        Route::post('finish', [V1\IngestController::class, 'finish'])->name('finish');
+    });
 
     // --- Admin (separate "admin" session guard) ----------------------------
     Route::prefix('admin')->name('admin.')->group(function () {

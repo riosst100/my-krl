@@ -24,6 +24,9 @@ class Setting extends Model
     /** Comma-separated kinds the automatic sync runs: stations, schedules, trains (overrides KCI_AUTO_SYNC_TYPES). */
     public const AUTO_SYNC_TYPES = 'kci.auto_sync_types';
 
+    /** "true"/"false": whether krl-sync (Vercel) may sync on its own schedule (GET /ingest/config). */
+    public const INGEST_AUTO_SYNC = 'kci.ingest_auto_sync';
+
     /** JSON map of KCI operational area id => name, e.g. {"0":"Jabodetabek","6":"Yogyakarta"}. */
     public const OPERATIONAL_AREAS = 'kci.operational_areas';
 

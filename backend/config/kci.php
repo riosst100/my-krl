@@ -120,6 +120,10 @@ return [
     // A scheduler that was down at the exact minute still starts a run this many minutes late.
     'auto_sync_grace_minutes' => (int) env('KCI_AUTO_SYNC_GRACE_MINUTES', 10),
 
+    // Shared secret for the ingest API (krl-sync on Vercel pushes the timetable here).
+    // Empty = the receiving API is switched off.
+    'ingest_token' => env('SYNC_INGEST_TOKEN'),
+
     // A queued/running sync older than this is treated as stale (crashed worker).
     // A full sync with the polite request delays takes ~20-30 minutes.
     'stale_after_minutes' => (int) env('KCI_SYNC_STALE_MINUTES', 60),

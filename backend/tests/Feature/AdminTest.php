@@ -4,7 +4,6 @@ namespace Tests\Feature;
 
 use App\Enums\UserRole;
 use App\Models\Station;
-use App\Models\SyncLog;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -108,11 +107,11 @@ class AdminTest extends TestCase
     {
         $admin = User::factory()->admin()->create();
 
-        // Manual sync is POST /admin/sync/kci; the old endpoints and the push to prod are gone.
+        // Manual sync is POST /admin/sync/kci; the old endpoints and the push to prod are gone
+        // (the ingest API is back for krl-sync, see IngestTest).
         $this->actingAs($admin, 'admin')->fromFrontend();
         $this->postJson('/api/v1/admin/sync')->assertNotFound();
         $this->postJson('/api/v1/admin/stations/sync')->assertNotFound();
         $this->postJson('/api/v1/admin/sync/prod')->assertNotFound();
-        $this->postJson('/api/v1/ingest/start')->assertNotFound();
     }
 }
