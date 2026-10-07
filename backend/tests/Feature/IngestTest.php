@@ -61,27 +61,34 @@ class IngestTest extends TestCase
             ->assertExactJson(['data' => ['stations' => ['THB', 'SUD'], 'auto_sync' => false]]);
     }
 
-    public function test_ingest_replaces_the_server_data_with_what_was_pushed(): void
+    public function test_ingest_updates_only_what_was_pushed_and_keeps_old_data_valid(): void
     {
         config(['kci.ingest_token' => self::TOKEN]);
         $date = now()->toDateString();
-        $thb = Station::where('code', 'THB')->first();
-        $sud = Station::where('code', 'SUD')->first();
+        $yesterday = now()->subDay()->toDateString();
+        [$thb, $sud, $kpb] = ['THB', 'SUD', 'KPB'];
+        $id = fn (string $code) => Station::where('code', $code)->value('id');
 
-        // Stale data that must disappear: another date, and a station that is not pushed.
-        Schedule::create(['station_id' => $thb->id, 'train_number' => 'OLD1', 'destination' => 'X', 'departure_time' => '05:00:00', 'service_date' => now()->subDay()->toDateString()]);
-        Schedule::create(['station_id' => $sud->id, 'train_number' => 'OLD2', 'destination' => 'X', 'departure_time' => '05:00:00', 'service_date' => $date]);
-        TrainStop::create(['service_date' => now()->subDay()->toDateString(), 'train_number' => 'OLD1', 'sequence' => 1, 'station_code' => 'THB', 'time' => '05:00:00']);
+        // THB and KPB were last synced yesterday; SUD already has today's data.
+        Schedule::create(['station_id' => $id($thb), 'train_number' => 'OLD1', 'destination' => 'X', 'departure_time' => '05:00:00', 'service_date' => $yesterday]);
+        Schedule::create(['station_id' => $id($kpb), 'train_number' => 'K1', 'destination' => 'Y', 'departure_time' => '05:30:00', 'service_date' => $yesterday]);
+        Schedule::create(['station_id' => $id($sud), 'train_number' => 'S1', 'destination' => 'Z', 'departure_time' => '05:45:00', 'service_date' => $date]);
+        TrainStop::create(['service_date' => $yesterday, 'train_number' => 'K1', 'sequence' => 1, 'station_code' => 'KPB', 'station_id' => $id($kpb), 'time' => '05:30:00']);
+        TrainStop::create(['service_date' => $yesterday, 'train_number' => 'K1', 'sequence' => 2, 'station_code' => 'THB', 'station_id' => $id($thb), 'time' => '05:40:00']);
 
         $runId = $this->postJson('/api/v1/ingest/start', ['date' => $date, 'stations' => ['THB']], $this->ingestHeaders())->json('data.run_id');
+
+        // Carried forward at start: today's lookups already see the last known timetable.
+        $this->getJson('/api/v1/stations/KPB/schedules')->assertOk()->assertJsonPath('data.0.train_number', 'K1');
+        $this->assertSame(2, TrainStop::whereDate('service_date', $date)->where('train_number', 'K1')->count());
 
         $this->postJson('/api/v1/ingest/stations', ['stations' => [
             ['code' => 'THB', 'name' => 'Tanah Abang Baru', 'slug' => 'thb', 'is_active' => false],
             ['code' => 'KRI', 'name' => 'Kranji', 'latitude' => -6.22, 'longitude' => 106.97, 'operational_area' => 0],
         ]], $this->ingestHeaders())->assertOk()->assertJsonPath('data.stations', 2);
 
-        $this->assertSame('Tanah Abang Baru', $thb->fresh()->name);
-        $this->assertTrue($thb->fresh()->is_active, 'an existing station keeps its activation on the server');
+        $this->assertSame('Tanah Abang Baru', Station::find($id($thb))->name);
+        $this->assertTrue(Station::find($id($thb))->is_active, 'an existing station keeps its activation on the server');
         $this->assertSame('kranji', Station::where('code', 'KRI')->value('slug'));
 
         $this->postJson('/api/v1/ingest/schedules', [
@@ -101,16 +108,42 @@ class IngestTest extends TestCase
         ], $this->ingestHeaders())->assertOk()->assertJsonPath('data.stops', 2);
 
         $this->postJson('/api/v1/ingest/finish', ['run_id' => $runId, 'date' => $date, 'status' => 'success', 'stations' => ['THB']], $this->ingestHeaders())
-            ->assertOk()->assertJsonPath('data.pruned', 2);
+            ->assertOk()->assertJsonPath('data.status', 'success');
 
-        $this->assertSame(['5198C'], Schedule::pluck('train_number')->all());
-        $this->assertSame(2, TrainStop::count());
+        $today = fn (string $code) => Schedule::where('station_id', $id($code))->whereDate('service_date', $date)->pluck('train_number')->all();
+        $this->assertSame(['5198C'], $today('THB'), 'the synced station has exactly the pushed timetable');
+        $this->assertSame(['K1'], $today('KPB'), 'a station the run did not send keeps its last timetable');
+        $this->assertSame(['S1'], $today('SUD'));
+        $this->assertSame(2, Schedule::whereDate('service_date', $yesterday)->count(), 'older dates are never deleted');
+        $this->assertSame(2, TrainStop::whereDate('service_date', $yesterday)->count());
+        $this->assertSame(4, TrainStop::whereDate('service_date', $date)->count());
+
         $log = SyncLog::findOrFail($runId);
         $this->assertSame(SyncStatus::Success, $log->status);
         $this->assertSame(1, $log->records_processed);
         $this->assertSame('ingest', $log->trigger);
+        $this->assertSame(['schedules' => 2, 'stops' => 2], $log->meta['carried_forward']);
 
         $this->getJson('/api/v1/stations/THB/schedules')->assertOk()->assertJsonPath('data.0.train_number', '5198C');
+    }
+
+    public function test_the_daily_command_carries_the_latest_day_forward_once(): void
+    {
+        $thb = Station::where('code', 'THB')->value('id');
+        $base = ['station_id' => $thb, 'destination' => 'X', 'departure_time' => '05:00:00'];
+        Schedule::create([...$base, 'train_number' => 'A1', 'service_date' => '2026-10-01']);
+        Schedule::create([...$base, 'train_number' => 'B1', 'service_date' => '2026-10-03']);
+        TrainStop::create(['service_date' => '2026-10-03', 'train_number' => 'B1', 'sequence' => 1, 'station_code' => 'THB', 'station_id' => $thb, 'time' => '05:00:00']);
+
+        $this->artisan('schedules:carry-forward', ['--date' => '2026-10-05'])
+            ->expectsOutput('2026-10-05: 1 schedules, 1 stops carried forward')->assertSuccessful();
+        $this->assertSame(['B1'], Schedule::whereDate('service_date', '2026-10-05')->pluck('train_number')->all(), 'only the latest day is copied');
+
+        // Running again changes nothing: the date already has data.
+        $this->artisan('schedules:carry-forward', ['--date' => '2026-10-05'])
+            ->expectsOutput('2026-10-05: 0 schedules, 0 stops carried forward')->assertSuccessful();
+        $this->assertSame(3, Schedule::count());
+        $this->assertSame(2, TrainStop::count());
     }
 
     public function test_a_second_run_is_refused_while_one_is_in_progress(): void

@@ -8,8 +8,8 @@ use App\Models\Schedule;
 use App\Models\Setting;
 use App\Models\Station;
 use App\Models\SyncLog;
-use App\Models\TrainStop;
 use App\Services\Kci\Data\KciSchedule;
+use App\Services\ScheduleCarryForwardService;
 use App\Services\ScheduleSyncService;
 use App\Services\TrainStopSyncService;
 use Carbon\CarbonImmutable;
@@ -24,14 +24,16 @@ use Illuminate\Validation\Rule;
  * (shared secret).
  *
  * Flow: start -> stations -> schedules (per station) -> stops (per train
- * chunk) -> finish. `finish` removes everything that was not part of the push,
- * so production always ends up with exactly what the local machine sent.
+ * chunk) -> finish. Nothing is truncated: `start` carries the last known
+ * timetable forward to the run's date, and each push only replaces what it
+ * sent, so stations or trains the run could not fetch keep their old data.
  */
 class IngestController extends Controller
 {
     public function __construct(
         private readonly ScheduleSyncService $schedules,
         private readonly TrainStopSyncService $trainStops,
+        private readonly ScheduleCarryForwardService $carryForward,
     ) {}
 
     /**
@@ -69,6 +71,10 @@ class IngestController extends Controller
             'started_at' => now(),
             'meta' => ['from' => $data['date'], 'days' => 1, 'stations' => $data['stations'] ?? 'all'],
         ]);
+
+        // Until the run replaces them, the old schedules stay valid on the run's date.
+        $carried = $this->carryForward->carryForward(CarbonImmutable::parse($data['date']));
+        $log->update(['meta' => [...$log->meta, 'carried_forward' => $carried]]);
 
         return response()->json(['data' => ['run_id' => $log->id]], 201);
     }
@@ -196,8 +202,7 @@ class IngestController extends Controller
     }
 
     /**
-     * Ends the run. On success everything outside this push (other dates,
-     * stations that were not sent) is removed.
+     * Ends the run. Nothing is removed: data the run did not send stays as it was.
      */
     public function finish(Request $request): JsonResponse
     {
@@ -211,15 +216,8 @@ class IngestController extends Controller
         ]);
 
         $log = SyncLog::findOrFail($data['run_id']);
-        $pruned = 0;
 
-        if ($data['status'] !== 'failed' && ! empty($data['stations'])) {
-            $ids = Station::whereIn('code', $data['stations'])->pluck('id');
-
-            $pruned = Schedule::where(fn ($q) => $q
-                ->whereDate('service_date', '!=', $data['date'])
-                ->orWhereNotIn('station_id', $ids))->delete();
-            TrainStop::whereDate('service_date', '!=', $data['date'])->delete();
+        if ($data['status'] !== 'failed') {
             $this->schedules->refreshLineColors();
         }
 
@@ -227,10 +225,9 @@ class IngestController extends Controller
             'status' => SyncStatus::from($data['status']),
             'error_message' => $data['error'] ?? null,
             'finished_at' => now(),
-            'meta' => [...($log->meta ?? []), 'pruned' => $pruned],
         ])->save();
 
-        return response()->json(['data' => ['status' => $log->status->value, 'pruned' => $pruned]]);
+        return response()->json(['data' => ['status' => $log->status->value]]);
     }
 
     private function uniqueSlug(string $name): string
