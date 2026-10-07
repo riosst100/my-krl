@@ -161,7 +161,9 @@ class IngestController extends Controller
             destinationArrivalTime: $s['destination_arrival_time'] ?? null,
         ));
 
-        $count = $this->schedules->persist($station, CarbonImmutable::parse($data['date']), $rows);
+        $date = CarbonImmutable::parse($data['date']);
+        $count = $this->schedules->persist($station, $date, $rows);
+        $this->schedules->dropOlderDays($station, $date);
 
         SyncLog::whereKey($data['run_id'])->increment('records_processed', $count);
         SyncLog::whereKey($data['run_id'])->increment('stations_processed');

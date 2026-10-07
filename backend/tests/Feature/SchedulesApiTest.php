@@ -86,7 +86,7 @@ class SchedulesApiTest extends TestCase
             ->assertJsonPath('data.4.line.color', '#16812B');
     }
 
-    public function test_sync_replaces_all_older_schedules(): void
+    public function test_sync_replaces_only_the_synced_stations_schedules(): void
     {
         Setting::put(Setting::SCHEDULES_API_URL, self::URL);
         Http::fake(['schedules.example.test/*' => Http::response(self::PAYLOAD)]);
@@ -99,8 +99,12 @@ class SchedulesApiTest extends TestCase
         $this->travelBack();
         $this->sync(['THB']);
 
-        $this->assertSame(5, Schedule::count(), 'rows from earlier runs and other dates are gone');
-        $this->assertSame([now()->toDateString()], Schedule::distinct()->pluck('service_date')->map->toDateString()->all());
+        $dates = fn (string $code) => Schedule::whereHas('station', fn ($q) => $q->where('code', $code))
+            ->orderBy('service_date')->distinct()->pluck('service_date')->map->toDateString()->all();
+
+        $this->assertSame([now()->toDateString()], $dates('THB'), 'the synced station\'s older days are replaced');
+        $this->assertSame([now()->subDay()->toDateString(), now()->toDateString()], $dates('SUD'), 'SUD was not synced: untouched, and still valid today');
+        $this->assertSame(15, Schedule::count());
     }
 
     public function test_each_station_gets_its_own_request(): void

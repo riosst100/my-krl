@@ -114,18 +114,13 @@ class TrainStopSyncService
             $trains = $this->trainNumbers($date, $only);
             $result = $this->sync($trains, $date, $progress, refresh: $log->trigger !== 'schedule');
 
-            // Only the selected stations' trains of this date stay.
-            $pruned = $result['fetched'] > 0 || $result['skipped'] > 0
-                ? TrainStop::where(fn ($q) => $q->where('service_date', '!=', $date->toDateString())->orWhereNotIn('train_number', $trains->all()))->delete()
-                : 0;
-
+            // Each fetched train's stops were replaced; every other train keeps its stops.
             $log->fill([
                 'records_processed' => $result['stops'],
                 'stations_processed' => $only === [] ? Station::active()->count() : count($only),
                 'meta' => [
                     ...$log->meta,
                     'date' => $date->toDateString(),
-                    'pruned' => $pruned,
                     'train_stops' => [
                         ...collect($result)->except('failed')->all(),
                         'failed' => count($result['failed']),
@@ -330,7 +325,8 @@ class TrainStopSyncService
         ], $stops, array_keys($stops));
 
         DB::transaction(function () use ($serviceDate, $train, $rows) {
-            TrainStop::whereDate('service_date', $serviceDate)->where('train_number', $train)->delete();
+            // This train's stops (this date and older days) are replaced; other trains are untouched.
+            TrainStop::whereDate('service_date', '<=', $serviceDate)->where('train_number', $train)->delete();
             TrainStop::insert($rows);
         });
 

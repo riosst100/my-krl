@@ -39,6 +39,7 @@ class ManualImportTest extends TestCase
         $thb = Station::where('code', 'THB')->first();
         $kpb = Station::where('code', 'KPB')->first();
         Schedule::create(['station_id' => $kpb->id, 'train_number' => 'OLD', 'destination' => 'X', 'departure_time' => '05:00:00', 'service_date' => now()->subDay()->toDateString()]);
+        Schedule::create(['station_id' => $thb->id, 'train_number' => 'THBOLD', 'destination' => 'X', 'departure_time' => '05:00:00', 'service_date' => now()->subDay()->toDateString()]);
         Http::fake();
 
         $this->actingAs($admin, 'admin')->fromFrontend()
@@ -49,7 +50,8 @@ class ManualImportTest extends TestCase
 
         Http::assertNothingSent();
         $this->assertSame(['5198C', '5701C'], Schedule::where('station_id', $thb->id)->orderBy('train_number')->pluck('train_number')->all());
-        $this->assertSame(0, Schedule::where('train_number', 'OLD')->count(), 'older days are dropped');
+        $this->assertSame(0, Schedule::where('train_number', 'THBOLD')->count(), 'the imported station\'s older days are replaced');
+        $this->assertSame(['OLD'], Schedule::where('station_id', $kpb->id)->whereDate('service_date', now()->toDateString())->pluck('train_number')->all(), 'other stations keep their timetable');
         $log = SyncLog::where('trigger', 'import')->first();
         $this->assertSame('manual-json', $log->source);
         $this->assertSame(SyncStatus::Success, $log->status);

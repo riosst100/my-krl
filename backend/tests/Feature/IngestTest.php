@@ -61,7 +61,7 @@ class IngestTest extends TestCase
             ->assertExactJson(['data' => ['stations' => ['THB', 'SUD'], 'auto_sync' => false]]);
     }
 
-    public function test_ingest_updates_only_what_was_pushed_and_keeps_old_data_valid(): void
+    public function test_ingest_replaces_only_what_was_pushed_and_keeps_other_data_valid(): void
     {
         config(['kci.ingest_token' => self::TOKEN]);
         $date = now()->toDateString();
@@ -114,7 +114,8 @@ class IngestTest extends TestCase
         $this->assertSame(['5198C'], $today('THB'), 'the synced station has exactly the pushed timetable');
         $this->assertSame(['K1'], $today('KPB'), 'a station the run did not send keeps its last timetable');
         $this->assertSame(['S1'], $today('SUD'));
-        $this->assertSame(2, Schedule::whereDate('service_date', $yesterday)->count(), 'older dates are never deleted');
+        // Only the pushed station's older day is replaced; KPB was not pushed and keeps yesterday too.
+        $this->assertSame(['K1'], Schedule::whereDate('service_date', $yesterday)->pluck('train_number')->all());
         $this->assertSame(2, TrainStop::whereDate('service_date', $yesterday)->count());
         $this->assertSame(4, TrainStop::whereDate('service_date', $date)->count());
 

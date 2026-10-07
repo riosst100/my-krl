@@ -7,7 +7,6 @@ use App\Models\Schedule;
 use App\Models\Setting;
 use App\Models\Station;
 use App\Models\SyncLog;
-use App\Models\TrainStop;
 use App\Services\Kci\Exceptions\KciApiException;
 use Illuminate\Support\Facades\DB;
 
@@ -23,12 +22,13 @@ class ManualImportService
         private readonly ScheduleSyncService $schedules,
         private readonly StationSyncService $stations,
         private readonly TrainStopSyncService $trainStops,
+        private readonly ScheduleCarryForwardService $carryForward,
     ) {}
 
     /**
      * One station's timetable (the /schedules?stationid=… response) for today.
-     * Replaces that station's schedules; older days are dropped so that only
-     * one service date is ever shown.
+     * Replaces that station's schedules for today; other stations and older
+     * days are left as they are (other stations keep their last timetable).
      *
      * @return array{records: int, message: string}
      *
@@ -54,9 +54,9 @@ class ManualImportService
         ]);
 
         $count = DB::transaction(function () use ($station, $date, $rows) {
+            $this->carryForward->carryForward($date);
             $count = $this->schedules->persist($station, $date, $rows);
-            Schedule::whereDate('service_date', '<', $date->toDateString())->delete();
-            TrainStop::whereDate('service_date', '<', $date->toDateString())->delete();
+            $this->schedules->dropOlderDays($station, $date);
             $this->schedules->refreshLineColors();
 
             return $count;

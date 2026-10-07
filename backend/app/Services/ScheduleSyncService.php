@@ -8,7 +8,6 @@ use App\Models\Setting;
 use App\Models\Station;
 use App\Models\SyncLog;
 use App\Models\TrainLine;
-use App\Models\TrainStop;
 use App\Services\Concerns\FinishesSyncLog;
 use App\Services\Kci\Clients\KciUrlClient;
 use App\Services\Kci\Data\KciSchedule;
@@ -46,6 +45,7 @@ class ScheduleSyncService
         private readonly KciService $kci,
         private readonly StationSyncService $stationSync,
         private readonly KciUrlClient $urlClient,
+        private readonly ScheduleCarryForwardService $carryForward,
     ) {}
 
     /**
@@ -180,19 +180,12 @@ class ScheduleSyncService
                 $this->stationSync->import($this->kci->getStations());
             }
 
+            // Nothing is truncated: stations this run does not (or cannot) sync keep
+            // their last known timetable; persist() only replaces what it fetched.
+            $dates->each(fn (CarbonImmutable $date) => $this->carryForward->carryForward($date));
+
             [$records, $stations, $failures] = $this->syncSchedules($dates, $only, $url, $progress);
             $this->refreshLineColors();
-
-            if ($url !== '') {
-                // The Schedules API only ever returns the current timetable: everything this
-                // run did not write is stale, so the table ends up fresh (a truncate that
-                // only happens once the new data is in). Train stops have their own sync.
-                $pruned = $stations > 0 ? Schedule::where('updated_at', '<', $startedAt)->delete() : 0;
-            } else {
-                $cutoff = now()->subDays(config('kci.retention_days'))->toDateString();
-                $pruned = Schedule::where('service_date', '<', $cutoff)->delete();
-                TrainStop::where('service_date', '<', $cutoff)->delete();
-            }
 
             $log->fill([
                 'records_processed' => $records,
@@ -200,7 +193,6 @@ class ScheduleSyncService
                 'meta' => [
                     ...$log->meta,
                     'failed_stations' => array_slice($failures, 0, 50, true),
-                    'pruned' => $pruned,
                 ],
             ]);
 
@@ -268,6 +260,7 @@ class ScheduleSyncService
                     $records += $this->persist($station, $date, $schedules);
                 }
 
+                $this->dropOlderDays($station, $dates->first());
                 $succeeded++;
             } catch (KciBlockedException $e) {
                 // Every remaining station would be refused too.
@@ -281,6 +274,17 @@ class ScheduleSyncService
         $progress && $progress('schedules', $stations->count(), $stations->count());
 
         return [$records, $succeeded, $failures];
+    }
+
+    /**
+     * A synced station's days before $date are replaced by the new timetable.
+     * Only that station is touched; every other station keeps its data.
+     */
+    public function dropOlderDays(Station $station, CarbonInterface $date): int
+    {
+        return Schedule::where('station_id', $station->id)
+            ->whereDate('service_date', '<', $date->toDateString())
+            ->delete();
     }
 
     /**

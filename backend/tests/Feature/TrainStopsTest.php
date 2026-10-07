@@ -106,7 +106,7 @@ class TrainStopsTest extends TestCase
         Http::assertSentCount(1 + 2 + 2); // THB timetable once, stops twice per train
     }
 
-    public function test_stops_of_trains_outside_the_selected_stations_are_removed(): void
+    public function test_only_the_synced_trains_stops_are_replaced(): void
     {
         $this->sync();
         TrainStop::create(['service_date' => now()->toDateString(), 'train_number' => '9999', 'sequence' => 1, 'station_code' => 'MRI', 'time' => '05:00:00']);
@@ -114,8 +114,10 @@ class TrainStopsTest extends TestCase
 
         $this->syncTrains();
 
-        $this->assertSame(['1800A', '5701C'], TrainStop::distinct()->orderBy('train_number')->pluck('train_number')->all());
-        $this->assertSame(8, TrainStop::count());
+        // 5701C was synced: its older day is replaced. 9999 was not: it keeps its stops.
+        $this->assertSame(['1800A', '5701C', '9999'], TrainStop::distinct()->orderBy('train_number')->pluck('train_number')->all());
+        $this->assertSame(0, TrainStop::where('train_number', '5701C')->whereDate('service_date', now()->subDay()->toDateString())->count());
+        $this->assertSame(9, TrainStop::count());
     }
 
     public function test_train_sync_needs_schedules_first(): void

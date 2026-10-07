@@ -100,9 +100,6 @@ return [
     // Number of service days (starting today) stored per sync run.
     'sync_days' => (int) env('KCI_SYNC_DAYS', 7),
 
-    // Schedules older than this many days are pruned after each sync.
-    'retention_days' => (int) env('KCI_RETENTION_DAYS', 7),
-
     // Timetable watcher: fingerprints KCI's current timetable to learn when KCI
     // publishes a new one (see Admin -> Sinkronisasi).
     'watch_station' => env('KCI_WATCH_STATION'),
