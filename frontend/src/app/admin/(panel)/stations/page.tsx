@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
   Badge,
-  Button,
   Card,
   EmptyState,
   ErrorState,
@@ -15,21 +14,16 @@ import {
   TextField,
 } from "@/components/ui";
 import { DataTable } from "@/components/ui/DataTable";
-import { useToast } from "@/components/ui/Toast";
-import { getAdminStations, setStationActive } from "@/lib/api/admin";
+import { getAdminStations } from "@/lib/api/admin";
 import { errorMessage } from "@/lib/api/client";
-import type { Station } from "@/lib/api/types";
 import { formatDateTime, formatNumber } from "@/lib/format";
 import { useApi } from "@/lib/hooks/useApi";
 import { useDebounced } from "@/lib/hooks/useDebounced";
 
 export default function AdminStationsPage() {
-  const { toast } = useToast();
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<"" | "active" | "inactive">("");
   const [page, setPage] = useState(1);
-  const [overrides, setOverrides] = useState<Record<number, boolean>>({});
-  const [busy, setBusy] = useState<number | null>(null);
   const q = useDebounced(search);
 
   const { data, error, loading, reload } = useApi(
@@ -46,22 +40,6 @@ export default function AdminStationsPage() {
     const id = setInterval(reload, 3000);
     return () => clearInterval(id);
   }, [inProgress, reload]);
-
-  const toggle = async (station: Station, active: boolean) => {
-    setBusy(station.id);
-    try {
-      const updated = await setStationActive(station.id, !active);
-      setOverrides((o) => ({ ...o, [station.id]: updated.is_active }));
-      toast(
-        `Stasiun ${updated.name} ${updated.is_active ? "diaktifkan" : "dinonaktifkan"}.`,
-        "success",
-      );
-    } catch (err) {
-      toast(errorMessage(err), "error");
-    } finally {
-      setBusy(null);
-    }
-  };
 
   return (
     <>
@@ -175,42 +153,25 @@ export default function AdminStationsPage() {
                 {
                   key: "shown",
                   header: "Tampil di situs",
-                  cell: (s) => {
-                    const active = overrides[s.id] ?? s.is_active;
-                    return (
-                      <Badge tone={active ? "success" : "neutral"}>
-                        {active ? "Aktif" : "Nonaktif"}
-                      </Badge>
-                    );
-                  },
+                  cell: (s) => (
+                    <Badge tone={s.is_active ? "success" : "neutral"}>
+                      {s.is_active ? "Aktif" : "Nonaktif"}
+                    </Badge>
+                  ),
                 },
                 {
                   key: "actions",
                   header: "Aksi",
                   mobile: "action",
                   className: "whitespace-nowrap text-right",
-                  cell: (s) => {
-                    const active = overrides[s.id] ?? s.is_active;
-                    return (
-                      <span className="inline-flex items-center gap-3">
-                        <Link
-                          href={`/admin/stations/${s.id}`}
-                          className="text-sm font-semibold text-brand-600 hover:underline"
-                        >
-                          Detail
-                        </Link>
-                        <Button
-                          size="sm"
-                          variant={active ? "danger" : "secondary"}
-                          loading={busy === s.id}
-                          onClick={() => toggle(s, active)}
-                          aria-label={`${active ? "Nonaktifkan" : "Aktifkan"} stasiun ${s.name}`}
-                        >
-                          {active ? "Nonaktifkan" : "Aktifkan"}
-                        </Button>
-                      </span>
-                    );
-                  },
+                  cell: (s) => (
+                    <Link
+                      href={`/admin/stations/${s.id}`}
+                      className="text-sm font-semibold text-brand-600 hover:underline"
+                    >
+                      Detail
+                    </Link>
+                  ),
                 },
               ]}
             />
