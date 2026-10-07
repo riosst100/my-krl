@@ -154,4 +154,31 @@ class IngestTest extends TestCase
         $this->postJson('/api/v1/ingest/start', ['date' => '2026-10-04'], $this->ingestHeaders())->assertCreated();
         $this->postJson('/api/v1/ingest/start', ['date' => '2026-10-04'], $this->ingestHeaders())->assertConflict();
     }
+
+    public function test_progress_is_kept_for_the_page_and_a_stopped_run_tells_the_sender_to_stop(): void
+    {
+        config(['kci.ingest_token' => self::TOKEN]);
+        $this->getJson('/api/v1/ingest/runs/latest', $this->ingestHeaders())->assertOk()->assertExactJson(['data' => null]);
+
+        $runId = $this->postJson('/api/v1/ingest/start', ['date' => '2026-10-04', 'stations' => ['THB']], $this->ingestHeaders())->json('data.run_id');
+        $progress = ['phase' => 'stops', 'percent' => 40, 'progress' => ['stations' => '1/1', 'trains' => '12/360']];
+
+        $this->postJson('/api/v1/ingest/progress', ['run_id' => $runId, 'progress' => $progress], $this->ingestHeaders())
+            ->assertOk()->assertJsonPath('data.status', 'running');
+        $this->getJson('/api/v1/ingest/runs/latest', $this->ingestHeaders())->assertOk()
+            ->assertJsonPath('data.run_id', $runId)
+            ->assertJsonPath('data.status', 'running')
+            ->assertJsonPath('data.progress.percent', 40);
+
+        // Stopped from the page: the run is closed as failed ...
+        $this->postJson('/api/v1/ingest/finish', ['run_id' => $runId, 'date' => '2026-10-04', 'status' => 'failed', 'error' => 'Dihentikan'], $this->ingestHeaders())
+            ->assertOk()->assertJsonPath('data.status', 'failed');
+
+        // ... the sender learns it at its next report, and its own finish does not overwrite it.
+        $this->postJson('/api/v1/ingest/progress', ['run_id' => $runId, 'progress' => $progress], $this->ingestHeaders())
+            ->assertOk()->assertJsonPath('data.status', 'failed');
+        $this->postJson('/api/v1/ingest/finish', ['run_id' => $runId, 'date' => '2026-10-04', 'status' => 'success'], $this->ingestHeaders())
+            ->assertOk()->assertJsonPath('data.status', 'failed');
+        $this->assertSame('Dihentikan', SyncLog::find($runId)->error_message);
+    }
 }

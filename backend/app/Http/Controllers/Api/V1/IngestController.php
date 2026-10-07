@@ -204,6 +204,46 @@ class IngestController extends Controller
     }
 
     /**
+     * Progress of a running run, as krl-sync reports it after each step (kept
+     * in the log's meta for the krl-sync page). The answer carries the run's
+     * status: anything but "running" (e.g. stopped from the page) tells the
+     * sender to stop.
+     */
+    public function progress(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'run_id' => ['required', 'integer', Rule::exists('sync_logs', 'id')->where('trigger', 'ingest')],
+            'progress' => ['required', 'array'],
+        ]);
+
+        $log = SyncLog::findOrFail($data['run_id']);
+
+        if ($log->status === SyncStatus::Running) {
+            $log->update(['meta' => [...($log->meta ?? []), 'progress' => $data['progress'], 'reported_at' => now()->toIso8601String()]]);
+        }
+
+        return response()->json(['data' => ['status' => $log->status->value]]);
+    }
+
+    /**
+     * The most recent run pushed through this API, for the krl-sync page.
+     */
+    public function latest(): JsonResponse
+    {
+        $log = SyncLog::where('trigger', 'ingest')->latest('id')->first();
+
+        return response()->json(['data' => $log ? [
+            'run_id' => $log->id,
+            'status' => $log->status->value,
+            'started_at' => $log->started_at?->toIso8601String(),
+            'finished_at' => $log->finished_at?->toIso8601String(),
+            'error' => $log->error_message,
+            'progress' => $log->meta['progress'] ?? null,
+            'reported_at' => $log->meta['reported_at'] ?? null,
+        ] : null]);
+    }
+
+    /**
      * Ends the run. Nothing is removed: data the run did not send stays as it was.
      */
     public function finish(Request $request): JsonResponse
@@ -218,6 +258,11 @@ class IngestController extends Controller
         ]);
 
         $log = SyncLog::findOrFail($data['run_id']);
+
+        if ($log->status->isFinished()) {
+            // Already closed (e.g. stopped from the page): keep that outcome.
+            return response()->json(['data' => ['status' => $log->status->value]]);
+        }
 
         if ($data['status'] !== 'failed') {
             $this->schedules->refreshLineColors();

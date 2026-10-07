@@ -47,7 +47,9 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         Route::post('stations', [V1\IngestController::class, 'stations'])->name('stations');
         Route::post('schedules', [V1\IngestController::class, 'schedules'])->name('schedules');
         Route::post('stops', [V1\IngestController::class, 'stops'])->name('stops');
+        Route::post('progress', [V1\IngestController::class, 'progress'])->name('progress');
         Route::post('finish', [V1\IngestController::class, 'finish'])->name('finish');
+        Route::get('runs/latest', [V1\IngestController::class, 'latest'])->name('runs.latest');
     });
 
     // --- Admin (separate "admin" session guard) ----------------------------
