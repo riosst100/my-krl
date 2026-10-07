@@ -79,9 +79,12 @@ class AdminTest extends TestCase
 
     public function test_admin_can_search_users(): void
     {
-        $admin = User::factory()->admin()->create();
+        $admin = User::factory()->admin()->create(['name' => 'Admin', 'email' => 'admin@example.com']);
         User::factory()->create(['name' => 'Siti Rahma', 'email' => 'siti@example.com']);
-        User::factory()->count(3)->create();
+        // Fixed names/emails: random ones could contain "siti" too.
+        foreach (['Budi', 'Andi', 'Rina'] as $name) {
+            User::factory()->create(['name' => $name, 'email' => strtolower($name).'@example.com']);
+        }
 
         $this->actingAs($admin, 'admin')->fromFrontend()
             ->getJson('/api/v1/admin/users?search=siti')
