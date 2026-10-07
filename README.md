@@ -86,9 +86,8 @@ The admin comes from `ADMIN_EMAIL` / `ADMIN_PASSWORD` in `backend/.env`. **Chang
 | ----------- | ----------------------------------------------------------------------- |
 | `postgres`  | PostgreSQL 17 (`krl` database + `krl_test` for automated tests)          |
 | `backend`   | `php artisan serve` on :8000; runs migrations + seeding on startup       |
-| `queue`     | `queue:work` — runs the sync jobs (manual button or automatic schedule) |
-| `scheduler` | `schedule:work` — `kci:auto-sync` every minute: starts the sync at the times set in the admin panel |
-| `kci-fetch` | Python `curl_cffi` sidecar: fetches kci.id with a browser TLS fingerprint (see below) |
+| `queue`     | `queue:work` — queued jobs                                               |
+| `scheduler` | `schedule:work` — `schedules:carry-forward` at 00:01 (see §5)            |
 | `frontend`  | `next dev` on :3000                                                     |
 
 Redis is not used: sessions, cache, locks and the queue use the database.
@@ -113,13 +112,10 @@ docker compose exec backend php artisan test
 docker compose exec frontend npx tsc --noEmit
 docker compose exec frontend npx eslint src
 
-# Run a KCI sync now (from the CLI)
-docker compose exec backend php artisan kci:sync-stations                  # station list (normally monthly)
-docker compose exec backend php artisan kci:sync-schedules
-docker compose exec backend php artisan kci:sync-schedules --date=2026-10-10 --days=1
-docker compose exec backend php artisan kci:sync-schedules --station=THB      # one station only
+# Copy the last known timetable to today (normally the scheduler does this at 00:01)
+docker compose exec backend php artisan schedules:carry-forward
 
-# Reset the database (drop everything, migrate, seed, sync)
+# Reset the database (drop everything, migrate, seed demo data from the mock KCI client)
 docker compose exec backend php artisan migrate:fresh --seed
 
 # Stop / remove (add -v to also delete the database volume)
@@ -178,18 +174,10 @@ Compose injects the database host/credentials, `APP_URL`, `FRONTEND_URL` and `SA
 | `KCI_DRIVER` | `auto` (http if `KCI_API_URL` is set, else mock), `http`, or `mock` |
 | `KCI_API_URL`, `KCI_API_KEY` | KCI base URL and bearer token — **never commit real values** |
 | `KCI_STATIONS_ENDPOINT`, `KCI_SCHEDULES_ENDPOINT` | Paths relative to `KCI_API_URL` |
-| `KCI_TIMEOUT`, `KCI_RETRIES`, `KCI_REQUEST_DELAY_MS` | HTTP client behaviour |
-| `KCI_SYNC_STATIONS` | Comma-separated station codes to sync (e.g. `THB` while testing); empty = all active stations |
-| `KCI_SYNC_DAYS` | Service days stored per sync (starting today) |
-| `KCI_RETENTION_DAYS` | Older schedules are pruned |
-| `KCI_STATIONS_API_URL` | Default Stations API URL (`https://www.kci.id/api/krl/stations`); admins can override it in the panel |
-| `KCI_STATIONS_API_TOKEN` | Optional bearer token for the Stations API URL |
-| `KCI_SCHEDULES_API_URL` | Default Schedules API URL (`stationid` / `{station}` is replaced per station); admins can override it in the panel; empty = KCI client |
-| `KCI_SCHEDULES_API_TOKEN` | Optional bearer token for the Schedules API URL |
-| `KCI_TRAIN_STOPS_API_URL` | Default Train Stops API URL (`trainid` / `{train}` replaced per train); empty = no "Ke stasiun" search |
-| `KCI_TRAIN_STOPS_API_TOKEN` | Optional bearer token for the Train Stops API URL |
-| `KCI_TRAIN_STOPS_CONCURRENCY` | Parallel requests for train stops (default 5; the upstream needs 3–7 s per train) |
-| `KCI_RATE_LIMIT_PAUSE_SECONDS` | Wait on HTTP 429 without `Retry-After`, or when `X-RateLimit-Remaining` is nearly used up (default 30) |
+| `KCI_TIMEOUT`, `KCI_RETRIES` | HTTP client behaviour (demo data only) |
+| `SYNC_INGEST_TOKEN` | Shared secret with krl-sync (`INGEST_TOKEN` there): guards `/api/v1/ingest/*` and authenticates the on-demand stop lookup; empty = ingest API off |
+| `KCI_STOPS_PROXY_URL` | krl-sync endpoint for one train's stops (default `https://krl-sync.vercel.app/api/sync`); empty = no on-demand fetch |
+| `KCI_SYNC_STATIONS` | Default stations krl-sync syncs until an admin chooses them; empty = all active stations |
 | `TRUSTED_PROXIES` | Proxies whose `X-Forwarded-*` headers are trusted (default `*`) |
 
 ### `frontend/.env.local` (see `frontend/.env.example`)
@@ -249,68 +237,29 @@ DELETE /api/v1/auth/token (revokes the current token)
 ## 5. KCI integration & synchronization
 
 ```
-Laravel Scheduler (daily) / admin button / CLI
+krl-sync (Vercel, separate repo riosst100/krl-sync)
+   │  fetches kci.id with a browser fingerprint, paced like a person browsing
+   ├─► GET  /api/v1/ingest/config        stations to sync + automatic sync on/off (admin settings)
+   ├─► POST /api/v1/ingest/{start,stations,schedules,stops,progress,finish}
+   └─◄ GET  ?train=5701C                 one train's stops, asked by this app on demand
         │
         ▼
-ScheduleSyncService ──► KciService ──► KciClient (interface)
-   (upsert, logs)      (validate +       ├── HttpKciClient  (KCI_API_URL)
-                        transform)       └── MockKciClient  (default, offline)
-        │
-        ▼
-PostgreSQL (stations, train_lines, schedules, sync_logs)  ◄── all API reads
+PostgreSQL (stations, train_lines, schedules, train_stops, sync_logs)  ◄── all API reads
 ```
 
-- Pages and API **never call KCI directly**; they read PostgreSQL.
-- `HttpKciClient` expects the shape of the public KCI "krl-webs" API:
-  - stations: `{"status":200,"data":[{"sta_id":"BKS","sta_name":"BEKASI","fg_enable":1}]}`
-  - schedules (`?stationid=BKS&timefrom=00:00&timeto=23:59`):
-    `{"status":200,"data":[{"train_id":"5012","ka_name":"COMMUTER LINE CIKARANG","route_name":"CIKARANG-KAMPUNGBANDAN","dest":"KAMPUNGBANDAN","time_est":"05:21:00","color":"#0084D8","dest_time":"06:08:00"}]}`
-  - Endpoint paths, base URL and bearer token are configuration only. **Verify them against current KCI documentation/credentials before going live**; no real credentials are included.
-- `MockKciClient` generates a deterministic, realistic timetable (5 lines, ~70 stations, peak/off-peak/weekend headways) in the same shape. **Its times are generated, not official.**
-- To connect another source, implement `App\Services\Kci\Contracts\KciClient` and bind it in `AppServiceProvider` — nothing else changes.
+**This server never fetches from KCI.** Cloudflare in front of kci.id blocks the VPS, so the data comes from **krl-sync** on Vercel through the ingest API (`IngestController`, Bearer `SYNC_INGEST_TOKEN`). krl-sync runs daily (Vercel Cron, 00:30 WIB) or manually from its own page, and syncs the station list and each selected station's timetable. Each run is a `kci_schedules` row in `sync_logs` (`trigger = ingest`) with the progress krl-sync reports; the run history is in **Admin → Sinkronisasi → Riwayat**.
 
-**Cloudflare and the `kci-fetch` sidecar.** Cloudflare in front of kci.id blocks clients by their **TLS/HTTP2 fingerprint**, not by IP or headers: PHP/curl/Node get HTTP 403 "Attention Required" even with browser headers, from a datacenter and from home. Python `curl_cffi` with `impersonate="chrome"` passes. So every KCI URL request (`KciUrlClient`) goes through the `kci-fetch` sidecar (`docker/kci-fetch/kci_fetch.py`, `GET /fetch?url=…`) when `KCI_FETCH_PROXY_URL` is set (Docker Compose: `http://kci-fetch:8080`):
+**Admin settings for krl-sync** (Admin → Configuration → Sync Configuration): which stations it syncs (`/admin/settings/sync-stations`, default `KCI_SYNC_STATIONS`, empty = all active stations) and whether its daily automatic sync runs (`PUT /admin/settings/ingest-auto-sync`). krl-sync reads both from `GET /ingest/config`.
 
-- browser profile `KCI_IMPERSONATE` (default `chrome`), falling back to `safari`, then `firefox` on a Cloudflare block;
-- a block (403/503 HTML, `cf-mitigated`, "Attention Required" / "Just a moment") is answered with HTTP 502 + `X-Kci-Fetch-Error` and logged with the `cf-ray`; Laravel turns it into a clear sync error instead of parsing HTML;
-- upstream status, body and rate-limit headers (`Retry-After`, `X-RateLimit-*`) are passed through, so the 429 handling and batch pauses keep working; only `https://*.kci.id` URLs are allowed; timeout `KCI_FETCH_TIMEOUT` (20 s).
+**Nothing is truncated.** A sync only replaces what it sends: one station's schedules (that date and its older days), or one train's stops. Every other station and train keeps its data. To keep the last timetable valid on a new day, `schedules:carry-forward` (scheduler, 00:01, and at the start of every ingest run) copies each station's latest day — and each train's latest stops, marked `carried_forward` — to the new date when it has no data yet.
 
-Without Docker run the sidecar yourself (`pip install -r docker/kci-fetch/requirements.txt && python docker/kci-fetch/kci_fetch.py`, Debian/Ubuntu or another glibc system: `curl_cffi` has manylinux wheels, not musl/Alpine) and set `KCI_FETCH_PROXY_URL=http://127.0.0.1:8080`.
+**Train stops on demand.** The daily sync does not fetch train stops (thousands of requests). When a train's detail is opened (`GET /schedules/trains/{n}/stops`) and its stops for today were not fetched yet, `TrainStopLookupService` asks krl-sync (`KCI_STOPS_PROXY_URL?train=…`), stores the answer and serves later views from the database. Until then (or when the fetch fails) the carried-forward stops are used, so "Ke stasiun" search, reachable destinations and favourite routes keep working.
 
-**Where the data comes from.** **Admin → Sinkronisasi → Sync Data → Sync Sekarang** (`POST /api/v1/admin/sync/kci`, `SyncKciJob` on the queue) fetches the selected stations' timetable and train stops from KCI (through the sidecar) straight into the database, with a progress bar (fetch schedules → fetch train stops). Each run is a `kci_schedules` row in `sync_logs` (`trigger = manual` or `schedule`). The former local → production push ("Sync Data to Prod", `/api/v1/ingest/*`) has been removed.
+**Manual import (JSON).** Admin → Sinkronisasi → Import Manual accepts the pasted response of a KCI API call (`/schedules?stationid=…`, `/train-schedule?trainid=…` or `/stations`; `POST /api/v1/admin/sync/import`), with the same parsers, validation and replace rules.
 
-**Automatic sync.** Admin → Sinkronisasi → Sync Data → *Sync otomatis*: any number of times of day (`HH:MM`, `APP_TIMEZONE`), e.g. `00:30` and `04:00`; an empty list switches it off (`GET/PUT/DELETE /api/v1/admin/settings/auto-sync`, stored in `settings`, default `KCI_AUTO_SYNC_TIMES`). `kci:auto-sync` runs every minute from the scheduler and queues the same job as the **Sync Sekarang** button. Each time slot runs once (`trigger = schedule` in `sync_logs`); a slot missed while the scheduler was down still starts up to `KCI_AUTO_SYNC_GRACE_MINUTES` (10) late; a time that is added after it already passed today waits for tomorrow; a slot that comes while another sync is running is skipped (logged). The panel warns when the scheduler has not called `kci:auto-sync` for a few minutes. The manual button keeps working at any time.
+**Demo data.** `KciClient` (`MockKciClient` by default, `HttpKciClient` with `KCI_API_URL`) only feeds the seeder: a fresh local database gets stations and today's mock timetable. **Mock times are generated, not official.**
 
-**Admin → Sinkronisasi is a section with four sub menus:** *Sync Data* (Sync Sekarang, automatic times, which stations), *Import Manual* (pasted JSON), *Sumber Data* (the KCI API URLs for stations, schedules and train stops) and *Riwayat* (log of every sync).
-
-**Manual import (JSON).** When KCI cannot be reached, Admin → Sinkronisasi → Import Manual accepts the pasted response of a KCI API call (`/schedules?stationid=…`, `/train-schedule?trainid=…` or `/stations`; `POST /api/v1/admin/sync/import`). It uses the same parsers and validation as a fetched response. Schedules are stored for today for the chosen station (older days are removed); invalid JSON or an unexpected shape is reported next to the field.
-
-`kci:sync-stations` and `kci:sync-schedules` still exist as manual commands (e.g. to load the station list the first time). Note: seeding a fresh database runs a first KCI sync; with the sidecar that is a real sync of every active station and its trains (a few minutes).
-
-**Stations API URL.** The station sync reads the station list from a full URL, default `https://www.kci.id/api/krl/stations` (`KCI_STATIONS_API_URL`). Admins can change it in **Admin → Sinkronisasi → Sumber Data** (stored in the `settings` table, overrides `.env`), dry-run it with **Tes URL** (fetch + parse, nothing saved) or reset it to the default. An empty URL means "take the station list from the KCI client" (mock or `KCI_API_URL`). Optional bearer token: `KCI_STATIONS_API_TOKEN`.
-
-The parser expects the KCI shape `{"status":200,"data":[{"sta_id","sta_name","group_wil","fg_enable"}]}` (verified against the live URL on 2026-10-03: 111 stations) and also accepts a top-level array or a list under `stations`/`result`, with alternative field names (`code`/`name`/`active`...). KCI's area header rows (`WIL0 AREA JABODETABEK`, `WIL1 AREA MERAK`, `WIL6 AREA YOGYAKARTA`) are not stations: they become operational-area names (`operational_area_name`). A failure (e.g. HTTP 403 from Cloudflare, non-JSON response) marks the sync `failed` with the reason and leaves existing stations untouched.
-
-**Schedules API URL.** The daily schedule sync reads each station's timetable from a full URL, default `https://www.kci.id/api/krl/schedules?stationid=THB&timefrom=00%3A00&timeto=23%3A59` (`KCI_SCHEDULES_API_URL`). The value of `stationid` (or a `{station}` placeholder) is replaced by the code of every synced station (`KCI_SYNC_STATIONS`, currently `THB`). Admins manage it in **Admin → Sinkronisasi** (Ubah URL / Tes URL / Kembalikan ke default), next to the last sync date & time and the "Sync KCI Data Now" button. Optional bearer token: `KCI_SCHEDULES_API_TOKEN`.
-
-- The response is the KCI shape `{"status":200,"data":[{"train_id","ka_name","route_name","dest","time_est","color","dest_time"}]}` (verified on 2026-10-03: 344 trains at Tanah Abang; a field-by-field comparison of all 344 rows against `/api/v1/stations/THB/schedules` showed no differences).
-- The upstream timetable is **not dated**, so a URL-based sync stores it for **today only** (no copying onto future dates); the date picker therefore offers the days that were actually synced.
-- Stored as published: alphanumeric train numbers (`5198C`), routing suffixes (`KAMPUNGBANDAN VIA MRI` → "Kampung Bandan via MRI"), `route_name`, and the **per-train colour** (`schedules.color`; a line's colour is the colour most of its trains use).
-- The default URL uses `timefrom=00:00&timeto=23:59`, so the whole day (including trains after 23:00) is included.
-
-**Train Stops API URL & "Ke stasiun".** After a URL-based schedule sync, the stops of every synced train are fetched from `https://www.kci.id/api/krl/train-schedule?trainid=5701C` (`KCI_TRAIN_STOPS_API_URL`; the `trainid` value or a `{train}` placeholder is replaced per train) and stored in `train_stops` (`service_date`, `train_number`, `sequence`, `station_code`/`station_id`, `time`, `is_transit`). Trains whose stops are already stored for that day are skipped, so re-syncs are cheap; the first sync of a day makes one request per train (~344 for Tanah Abang). KCI answers slowly (3–7 s per request), so stops are fetched in parallel batches (`KCI_TRAIN_STOPS_CONCURRENCY`, default 5) and failures are retried once. The KCI web API is rate limited (`x-ratelimit-limit: 60`): HTTP 429 responses are retried after `Retry-After` (or `KCI_RATE_LIMIT_PAUSE_SECONDS`, max 2 retries) and batches pause when `X-RateLimit-Remaining` gets low; if it still fails, the sync is logged as failed and existing data is kept. Admins manage the URL in **Admin → Sinkronisasi → Pemberhentian kereta**; an empty URL disables it. This powers the **"Ke stasiun"** picker on `/stations/{code}` and `/schedule`: only trains that stop at the chosen station *after* the departure station are listed, with the arrival time there and the number of stations.
-
-Station sync: upserts code, name, `operational_area` (KCI `group_wil`) and `kci_enabled` (KCI `fg_enable`), sets `synced_at`, and reports new / changed / missing stations. New stations start with `is_active = kci_enabled`; afterwards `is_active` and coordinates belong to the admin and are never overwritten. Stations that disappear from KCI are reported, not deleted.
-
-Schedule sync behaviour (`php artisan kci:sync-schedules`):
-
-1. Takes a cache lock (no concurrent syncs) and writes a `sync_logs` row (`queued → running → success | partial | failed`).
-2. Uses the stations already in the database (it only fetches the station list itself when the table is empty).
-3. For every active station (or only `KCI_SYNC_STATIONS` / `--station`) and each of `KCI_SYNC_DAYS` dates: fetch, validate rows (invalid rows are skipped and logged), then upsert on `(station_id, service_date, train_number)` — no duplicates — and delete trains that disappeared from the timetable.
-4. Per-station failures do not abort the run (status `partial`); an unreachable API marks the run `failed` with the error message. Existing data stays in place.
-5. Prunes schedules older than `KCI_RETENTION_DAYS`.
-
-The scheduler is defined in `backend/routes/console.php` and runs inside the `scheduler` container. Without Docker, use `php artisan schedule:work` or a cron entry `* * * * * php /path/artisan schedule:run`.
+Stored as published: alphanumeric train numbers (`5198C`), routing suffixes (`KAMPUNGBANDAN VIA MRI` → "Kampung Bandan via MRI"), `route_name`, and the **per-train colour** (`schedules.color`; a line's colour is the colour most of its trains use). New stations start with `is_active = kci_enabled`; afterwards `is_active` and coordinates belong to the admin and are never overwritten.
 
 ### Data model
 
@@ -412,16 +361,11 @@ GET /api/v1/stations/BKS/schedules?date=2026-10-03&direction=cikarang&time_from=
 | GET | `/admin/stations?search=&status=active\|inactive` | paginated, today's schedule count; `meta.last_station_sync`, `meta.next_station_sync` |
 | GET | `/admin/stations/{id}` | station data + `lines` (name, colour), `schedules_by_date`, `destinations_today` |
 | PATCH | `/admin/stations/{id}` | `{"is_active": false}` and/or `{"latitude": -6.2, "longitude": 106.8}` |
-| POST | `/admin/stations/sync` | queue a station sync: `202`, or `409` if one is running |
-| GET / PUT / DELETE | `/admin/settings/stations-api` | read / set (`{"url": "https://..."}`, `""` = use KCI client) / reset to default |
-| POST | `/admin/settings/stations-api/test` | `{"url": "..."}` → `{ok, count, sample[], error}` without saving |
-| GET / PUT / DELETE | `/admin/settings/schedules-api` | read / set (must contain `stationid=` or `{station}`; `""` = KCI client) / reset |
-| GET / PUT / DELETE | `/admin/settings/train-stops-api` | read / set (must contain `trainid=` or `{train}`; `""` = disabled) / reset |
-| POST | `/admin/settings/train-stops-api/test` | `{"url": "...", "train": "5701C"}` → `{ok, count, stops[], error}` without saving |
-| POST | `/admin/settings/schedules-api/test` | `{"url": "...", "station": "THB"}` → `{ok, count, first, last, lines, sample[], error}` without saving |
+| GET / PUT / DELETE | `/admin/settings/sync-stations` | stations krl-sync syncs (`{"stations": ["THB"]}`) / reset to `KCI_SYNC_STATIONS`; includes `auto_sync` |
+| PUT | `/admin/settings/ingest-auto-sync` | `{"enabled": false}` switches krl-sync's daily automatic sync off |
 | GET | `/admin/schedules?station=&date=&train_number=` | paginated, includes inactive stations |
-| GET | `/admin/sync-logs?type=schedules\|stations`, `/admin/sync-logs/{id}` | history; `meta`: `in_progress`, `last_schedule_sync`, `last_successful_schedule_sync`, `next_schedule_sync` |
-| POST | `/admin/sync` | `202` queued, `409` if a sync is already running |
+| GET | `/admin/sync-logs?type=schedules\|stations\|trains`, `/admin/sync-logs/{id}` | history; `meta`: `in_progress`, `last_sync`, `last_successful_sync` |
+| POST | `/admin/sync/import` | manual import of a pasted KCI response |
 
 ---
 
@@ -446,7 +390,7 @@ Components only call functions from `lib/api/*`; no `fetch` calls are scattered 
 
 Favourite stations/routes/schedules and push/delay notifications can be added as new tables related to `users` and `stations`/`schedules`, exposed under `/api/v1/me/...` with `auth:sanctum` — the same endpoints will serve the Flutter app via bearer tokens.
 
-**Fresh data, no date picker.** After a successful sync via the Schedules API URL, every schedule row (and train stop) that the run did not write is deleted, so the tables only ever hold the latest timetable. The public site has no date selection: the API always serves the latest synced service date and ignores `?date=`.
+**No date picker.** The public site has no date selection: the API serves the latest synced service date.
 
 ---
 

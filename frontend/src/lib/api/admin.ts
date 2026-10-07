@@ -70,41 +70,6 @@ export function setStationActive(id: number, isActive: boolean): Promise<Station
   return updateStation(id, { is_active: isActive });
 }
 
-// --- Stations API URL (source of the monthly station sync) --------------------
-
-export interface StationsApiSetting {
-  url: string;
-  default_url: string;
-  is_default: boolean;
-  updated_at: string | null;
-  updated_by: string | null;
-}
-
-export interface StationsApiPreview {
-  ok: boolean;
-  url: string;
-  count: number;
-  sample: { code: string; name: string; enabled: boolean; operational_area: number | null }[];
-  error: string | null;
-}
-
-export async function getStationsApiSetting(): Promise<StationsApiSetting> {
-  return (await apiFetch<{ data: StationsApiSetting }>("/admin/settings/stations-api")).data;
-}
-
-export async function saveStationsApiUrl(url: string): Promise<StationsApiSetting> {
-  return (await apiFetch<{ data: StationsApiSetting }>("/admin/settings/stations-api", { method: "PUT", body: { url } })).data;
-}
-
-export async function resetStationsApiUrl(): Promise<StationsApiSetting> {
-  return (await apiFetch<{ data: StationsApiSetting }>("/admin/settings/stations-api", { method: "DELETE" })).data;
-}
-
-/** Fetch + parse the URL on the server without saving anything. */
-export async function testStationsApiUrl(url: string): Promise<StationsApiPreview> {
-  return (await apiFetch<{ data: StationsApiPreview }>("/admin/settings/stations-api/test", { method: "POST", body: { url } })).data;
-}
-
 // --- Schedules -------------------------------------------------------------------
 
 export function getAdminSchedules(filters: ScheduleFilters) {
@@ -113,151 +78,18 @@ export function getAdminSchedules(filters: ScheduleFilters) {
 
 // --- Sync ------------------------------------------------------------------------
 
-/** The separate "Sync dari KCI" runs. */
+/** Kinds of sync runs (krl-sync on Vercel, or a manual import). */
 export type KciSyncType = "stations" | "schedules" | "trains";
 
 export interface SyncLogsMeta {
   in_progress: boolean;
-  /** The last "Sync dari KCI" (manual or automatic) of the requested type (default: schedules). */
+  /** The last sync (krl-sync on Vercel or a manual import) of the requested type (default: schedules). */
   last_sync: SyncLog | null;
   last_successful_sync: SyncLog | null;
 }
 
 export function getSyncLogs(page = 1, type: "" | KciSyncType = "") {
   return apiFetch<Paginated<SyncLog, SyncLogsMeta>>("/admin/sync-logs", { query: { page, type } });
-}
-
-// --- Schedules API URL (source of the daily schedule sync) ---------------------
-
-export interface SchedulesApiSetting extends StationsApiSetting {
-  /** Station codes whose timetable is synced (KCI_SYNC_STATIONS); empty = all active stations. */
-  sync_stations: string[];
-  test_station: string;
-}
-
-export interface SchedulesApiPreview {
-  ok: boolean;
-  url: string;
-  station: string;
-  count: number;
-  first: string | null;
-  last: string | null;
-  lines: string[];
-  sample: {
-    train_number: string;
-    line: string;
-    route_name: string | null;
-    destination: string;
-    departure_time: string;
-    destination_arrival_time: string | null;
-  }[];
-  error: string | null;
-}
-
-export async function getSchedulesApiSetting(): Promise<SchedulesApiSetting> {
-  return (await apiFetch<{ data: SchedulesApiSetting }>("/admin/settings/schedules-api")).data;
-}
-
-export async function saveSchedulesApiUrl(url: string): Promise<SchedulesApiSetting> {
-  return (await apiFetch<{ data: SchedulesApiSetting }>("/admin/settings/schedules-api", { method: "PUT", body: { url } })).data;
-}
-
-export async function resetSchedulesApiUrl(): Promise<SchedulesApiSetting> {
-  return (await apiFetch<{ data: SchedulesApiSetting }>("/admin/settings/schedules-api", { method: "DELETE" })).data;
-}
-
-// --- Train Stops API URL (stops per train, synced with the schedules) ---------
-
-export interface TrainStopsApiPreview {
-  ok: boolean;
-  url: string;
-  train: string;
-  count: number;
-  stops: { station_code: string; time: string; is_transit: boolean }[];
-  error: string | null;
-}
-
-export async function getTrainStopsApiSetting(): Promise<StationsApiSetting> {
-  return (await apiFetch<{ data: StationsApiSetting }>("/admin/settings/train-stops-api")).data;
-}
-
-export async function saveTrainStopsApiUrl(url: string): Promise<StationsApiSetting> {
-  return (await apiFetch<{ data: StationsApiSetting }>("/admin/settings/train-stops-api", { method: "PUT", body: { url } })).data;
-}
-
-export async function resetTrainStopsApiUrl(): Promise<StationsApiSetting> {
-  return (await apiFetch<{ data: StationsApiSetting }>("/admin/settings/train-stops-api", { method: "DELETE" })).data;
-}
-
-export async function testTrainStopsApiUrl(url: string, train?: string): Promise<TrainStopsApiPreview> {
-  return (await apiFetch<{ data: TrainStopsApiPreview }>("/admin/settings/train-stops-api/test", { method: "POST", body: { url, train } })).data;
-}
-
-/** Fetch + parse one station's timetable on the server without saving. */
-export async function testSchedulesApiUrl(url: string, station?: string): Promise<SchedulesApiPreview> {
-  return (
-    await apiFetch<{ data: SchedulesApiPreview }>("/admin/settings/schedules-api/test", { method: "POST", body: { url, station } })
-  ).data;
-}
-
-/** "Sync dari KCI": fetch from KCI straight into the database (runs in the background). */
-export interface SyncRequestRow {
-  id: number;
-  url: string;
-  status_code: number | null;
-  ok: boolean;
-  /** Outcome, e.g. "OK · 120 data" or "Diblokir Cloudflare (cf-ray …)". Never the body. */
-  message: string | null;
-  duration_ms: number | null;
-  created_at: string;
-}
-
-export interface SyncRequestsResponse {
-  data: SyncRequestRow[];
-  meta: { total: number; ok: number; failed: number };
-}
-
-/** KCI requests of one sync run, oldest first; pass the last seen id as `after` to poll. */
-export function getSyncRequests(logId: number, after = 0): Promise<SyncRequestsResponse> {
-  return apiFetch<SyncRequestsResponse>(`/admin/sync-logs/${logId}/requests`, { query: { after } });
-}
-
-export async function triggerKciSync(type: KciSyncType): Promise<SyncLog> {
-  const res = await apiFetch<{ data: SyncLog }>("/admin/sync/kci", { method: "POST", body: { type } });
-  return res.data;
-}
-
-// --- Automatic sync times ---------------------------------------------------------
-
-export interface AutoSyncSetting {
-  /** Times of day ("HH:MM", sorted) in effect; empty = off. */
-  times: string[];
-  /** KCI_AUTO_SYNC_TIMES from the environment. */
-  default_times: string[];
-  /** Kinds run at those times, in run order. */
-  types: KciSyncType[];
-  /** KCI_AUTO_SYNC_TYPES from the environment. */
-  default_types: KciSyncType[];
-  is_default: boolean;
-  timezone: string;
-  next_run_at: string | null;
-  last_run: SyncLog | null;
-  scheduler_seen_at: string | null;
-  scheduler_running: boolean;
-  updated_at: string | null;
-  updated_by: string | null;
-}
-
-export async function getAutoSyncSetting(): Promise<AutoSyncSetting> {
-  return (await apiFetch<{ data: AutoSyncSetting }>("/admin/settings/auto-sync")).data;
-}
-
-export async function saveAutoSyncTimes(times: string[], types: KciSyncType[]): Promise<AutoSyncSetting> {
-  return (await apiFetch<{ data: AutoSyncSetting }>("/admin/settings/auto-sync", { method: "PUT", body: { times, types } })).data;
-}
-
-export async function resetAutoSyncTimes(): Promise<AutoSyncSetting> {
-  return (await apiFetch<{ data: AutoSyncSetting }>("/admin/settings/auto-sync", { method: "DELETE" })).data;
 }
 
 export type ImportType = "schedules" | "train_stops" | "stations";
@@ -277,7 +109,7 @@ export async function importKciJson(input: ImportInput): Promise<{ type: ImportT
   return (await apiFetch<{ data: { type: ImportType; records: number; message: string } }>("/admin/sync/import", { method: "POST", body: input })).data;
 }
 
-// --- Stations whose schedules are synced -----------------------------------------
+// --- krl-sync (Vercel): stations it syncs, and its automatic sync ---------------
 
 export interface SyncStationsSetting {
   /** Station codes in effect (empty = every active station). */
@@ -288,6 +120,8 @@ export interface SyncStationsSetting {
   active_stations: number;
   updated_at: string | null;
   updated_by: string | null;
+  /** Whether krl-sync's daily automatic sync (Vercel Cron) runs. */
+  auto_sync: boolean;
 }
 
 export async function getSyncStationsSetting(): Promise<SyncStationsSetting> {
@@ -300,4 +134,9 @@ export async function saveSyncStations(stations: string[]): Promise<SyncStations
 
 export async function resetSyncStations(): Promise<SyncStationsSetting> {
   return (await apiFetch<{ data: SyncStationsSetting }>("/admin/settings/sync-stations", { method: "DELETE" })).data;
+}
+
+/** Switches krl-sync's daily automatic sync on or off (manual syncs keep working). */
+export async function setKrlSyncAutoSync(enabled: boolean): Promise<SyncStationsSetting> {
+  return (await apiFetch<{ data: SyncStationsSetting }>("/admin/settings/ingest-auto-sync", { method: "PUT", body: { enabled } })).data;
 }

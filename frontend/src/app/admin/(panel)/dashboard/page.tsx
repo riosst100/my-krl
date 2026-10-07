@@ -55,8 +55,8 @@ export default function DashboardPage() {
           <Card className="mt-6 p-5 sm:p-6">
             <div className="flex items-center justify-between gap-4">
               <h2 className="font-semibold text-ink">Sinkronisasi jadwal terakhir</h2>
-              <Link href="/admin/sync/jadwal" className="text-sm font-semibold text-brand-600 hover:underline">
-                Kelola →
+              <Link href="/admin/sync/riwayat" className="text-sm font-semibold text-brand-600 hover:underline">
+                Riwayat →
               </Link>
             </div>
             {loading || !data ? (

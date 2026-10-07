@@ -2,11 +2,11 @@
 
 namespace Database\Seeders;
 
-use App\Enums\SyncStatus;
 use App\Enums\UserRole;
-use App\Models\User;
 use App\Models\Station;
+use App\Models\User;
 use App\Services\FavoriteRouteService;
+use App\Services\KciService;
 use App\Services\ScheduleSyncService;
 use App\Services\StationSyncService;
 use Illuminate\Database\Seeder;
@@ -16,16 +16,19 @@ class DatabaseSeeder extends Seeder
     /**
      * Seed the application's database.
      */
-    public function run(StationSyncService $stationSync, ScheduleSyncService $sync, FavoriteRouteService $favorites): void
+    public function run(KciService $kci, StationSyncService $stationSync, ScheduleSyncService $sync, FavoriteRouteService $favorites): void
     {
         $this->seedAdmin();
 
-        // Stations, then schedules, from the configured KCI source (mock by default).
-        $stations = $stationSync->run($stationSync->createLog('console', status: SyncStatus::Running));
-        $this->command?->info("KCI station sync: {$stations->status->value}, {$stations->records_processed} stations");
+        // Demo stations and today's schedules from the KCI client (mock by default).
+        // Real data comes from krl-sync on Vercel.
+        $stations = $stationSync->import($kci->getStations());
+        $this->command?->info("Stations: {$stations['total']}");
 
-        $log = $sync->run($sync->createLog('console', status: SyncStatus::Running));
-        $this->command?->info("KCI sync: {$log->status->value}, {$log->records_processed} schedules");
+        $today = now();
+        $records = Station::active()->get()->sum(fn (Station $station) => $sync->persist($station, $today, $kci->getStationSchedules($station->code, $today)));
+        $sync->refreshLineColors();
+        $this->command?->info("Schedules: {$records}");
 
         if (app()->environment('local')) {
             $demo = User::firstOrCreate(

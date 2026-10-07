@@ -9,20 +9,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 #[Fillable(['key', 'value', 'updated_by'])]
 class Setting extends Model
 {
-    public const STATIONS_API_URL = 'kci.stations_api_url';
-
-    public const SCHEDULES_API_URL = 'kci.schedules_api_url';
-
     /** Comma-separated station codes whose timetable is synced (overrides KCI_SYNC_STATIONS). */
     public const SYNC_STATIONS = 'kci.sync_stations';
-
-    public const TRAIN_STOPS_API_URL = 'kci.train_stops_api_url';
-
-    /** Comma-separated times of day (HH:MM) for the automatic sync (overrides KCI_AUTO_SYNC_TIMES); "" = off. */
-    public const AUTO_SYNC_TIMES = 'kci.auto_sync_times';
-
-    /** Comma-separated kinds the automatic sync runs: stations, schedules, trains (overrides KCI_AUTO_SYNC_TYPES). */
-    public const AUTO_SYNC_TYPES = 'kci.auto_sync_types';
 
     /** "true"/"false": whether krl-sync (Vercel) may sync on its own schedule (GET /ingest/config). */
     public const INGEST_AUTO_SYNC = 'kci.ingest_auto_sync';

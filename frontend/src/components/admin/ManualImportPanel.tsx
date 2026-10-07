@@ -3,18 +3,19 @@
 import { useId, useState, type FormEvent } from "react";
 import { Alert, Button, Card, SelectField } from "@/components/ui";
 import { useToast } from "@/components/ui/Toast";
-import {
-  getSchedulesApiSetting,
-  getStationsApiSetting,
-  getTrainStopsApiSetting,
-  importKciJson,
-  type ImportType,
-} from "@/lib/api/admin";
+import { importKciJson, type ImportType } from "@/lib/api/admin";
 import { ApiError, errorMessage } from "@/lib/api/client";
 import type { Station } from "@/lib/api/types";
-import { useApi } from "@/lib/hooks/useApi";
 
-/** The API URL with the station code / train number filled in (same rules as the sync). */
+/** KCI's web API (the same URLs krl-sync fetches). */
+const KCI_URLS: Record<ImportType, string> = {
+  schedules:
+    "https://www.kci.id/api/krl/schedules?stationid={station}&timefrom=00%3A00&timeto=23%3A59",
+  train_stops: "https://www.kci.id/api/krl/train-schedule?trainid={train}",
+  stations: "https://www.kci.id/api/krl/stations",
+};
+
+/** The API URL with the station code / train number filled in (same rules as krl-sync). */
 function withParam(
   url: string,
   param: "stationid" | "trainid",
@@ -35,7 +36,7 @@ const TYPES: Record<
 > = {
   schedules: {
     label: "Jadwal satu stasiun",
-    hint: "Response dari /api/krl/schedules?stationid=KODE. Disimpan untuk hari ini; jadwal hari sebelumnya dihapus.",
+    hint: "Response dari /api/krl/schedules?stationid=KODE. Mengganti jadwal stasiun ini (hari ini dan hari sebelumnya); stasiun lain tidak berubah.",
     sample:
       '{"status":200,"data":[{"train_id":"5198C","ka_name":"COMMUTER LINE CIKARANG","route_name":"ANGKE-CIKARANG","dest":"CIKARANG","time_est":"06:01:00","color":"#0084D8","dest_time":"07:04:00"}]}',
   },
@@ -76,32 +77,18 @@ export function ManualImportPanel({
 
   const info = TYPES[type];
 
-  // The KCI URL to open by hand: the saved API URL (else the default) with the chosen station / train.
-  const urls = useApi("import-source-urls", async () => {
-    const [schedules, stops, stationList] = await Promise.all([
-      getSchedulesApiSetting(),
-      getTrainStopsApiSetting(),
-      getStationsApiSetting(),
-    ]);
-    return {
-      schedules: schedules.url || schedules.default_url,
-      train_stops: stops.url || stops.default_url,
-      stations: stationList.url || stationList.default_url,
-    };
-  });
-  const base = urls.data?.[type] ?? "";
+  // The KCI URL to open by hand, with the chosen station / train.
+  const base = KCI_URLS[type];
   let sourceUrl: string | null = null;
-  if (base) {
-    if (type === "schedules")
-      sourceUrl = station
-        ? withParam(base, "stationid", "{station}", station)
-        : null;
-    else if (type === "train_stops")
-      sourceUrl = train.trim()
-        ? withParam(base, "trainid", "{train}", train.trim())
-        : null;
-    else sourceUrl = base;
-  }
+  if (type === "schedules")
+    sourceUrl = station
+      ? withParam(base, "stationid", "{station}", station)
+      : null;
+  else if (type === "train_stops")
+    sourceUrl = train.trim()
+      ? withParam(base, "trainid", "{train}", train.trim())
+      : null;
+  else sourceUrl = base;
   const missing = type === "schedules" ? "Pilih stasiun" : "Isi nomor kereta";
 
   const submit = async (event: FormEvent) => {
@@ -213,9 +200,7 @@ export function ManualImportPanel({
           <p className="text-[13px] font-semibold text-slate-700">
             1. Buka URL API KCI, lalu salin hasilnya
           </p>
-          {urls.loading && !urls.data ? (
-            <p className="mt-1.5 text-xs text-muted">Memuat URL…</p>
-          ) : sourceUrl ? (
+          {sourceUrl ? (
             <>
               <a
                 href={sourceUrl}

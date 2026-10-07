@@ -21,13 +21,9 @@ x-backend: &backend
     DB_DATABASE: ${POSTGRES_DB:-krl}
     DB_USERNAME: ${POSTGRES_USER:-krl}
     DB_PASSWORD: ${POSTGRES_PASSWORD:-secret}
-    # KCI requests go through the curl_cffi sidecar (Cloudflare blocks PHP's TLS fingerprint).
-    KCI_FETCH_PROXY_URL: ${KCI_FETCH_PROXY_URL-http://kci-fetch:8080}
   depends_on:
     postgres:
       condition: service_healthy
-    kci-fetch:
-      condition: service_started
   restart: unless-stopped
 
 services:
@@ -61,24 +57,15 @@ services:
       retries: 30
       start_period: 30s
 
-  # Runs the sync jobs (manual button or automatic schedule).
+  # Queued jobs.
   queue:
     <<: *backend
     command: ["queue"]
 
-  # Laravel Scheduler: kci:auto-sync every minute (runs the sync at the times set in the admin panel).
+  # Laravel Scheduler: schedules:carry-forward at 00:01 (yesterday's timetable stays valid until krl-sync replaces it).
   scheduler:
     <<: *backend
     command: ["scheduler"]
-
-  # Fetches kci.id with a browser TLS fingerprint (curl_cffi); only reachable inside the Docker network.
-  kci-fetch:
-    build: ./docker/kci-fetch
-    image: krl-app-kci-fetch:dev
-    environment:
-      KCI_IMPERSONATE: ${KCI_IMPERSONATE:-chrome}
-      KCI_FETCH_TIMEOUT: ${KCI_FETCH_TIMEOUT:-20}
-    restart: unless-stopped
 
   frontend:
     image: node:24-alpine

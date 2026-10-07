@@ -67,24 +67,10 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
             Route::patch('users/{user}/role', [Admin\UserController::class, 'updateRole'])->name('users.role');
 
             Route::get('stations', [Admin\StationController::class, 'index'])->name('stations.index');
-            Route::get('settings/stations-api', [Admin\StationsApiController::class, 'show'])->name('settings.stations-api.show');
-            Route::put('settings/stations-api', [Admin\StationsApiController::class, 'update'])->name('settings.stations-api.update');
-            Route::delete('settings/stations-api', [Admin\StationsApiController::class, 'reset'])->name('settings.stations-api.reset');
             Route::get('settings/sync-stations', [Admin\SyncStationsController::class, 'show'])->name('settings.sync-stations.show');
             Route::put('settings/sync-stations', [Admin\SyncStationsController::class, 'update'])->name('settings.sync-stations.update');
             Route::delete('settings/sync-stations', [Admin\SyncStationsController::class, 'reset'])->name('settings.sync-stations.reset');
-            Route::get('settings/auto-sync', [Admin\AutoSyncController::class, 'show'])->name('settings.auto-sync.show');
-            Route::put('settings/auto-sync', [Admin\AutoSyncController::class, 'update'])->name('settings.auto-sync.update');
-            Route::delete('settings/auto-sync', [Admin\AutoSyncController::class, 'reset'])->name('settings.auto-sync.reset');
-            Route::get('settings/schedules-api', [Admin\SchedulesApiController::class, 'show'])->name('settings.schedules-api.show');
-            Route::put('settings/schedules-api', [Admin\SchedulesApiController::class, 'update'])->name('settings.schedules-api.update');
-            Route::delete('settings/schedules-api', [Admin\SchedulesApiController::class, 'reset'])->name('settings.schedules-api.reset');
-            Route::post('settings/schedules-api/test', [Admin\SchedulesApiController::class, 'test'])->middleware('throttle:admin-sync')->name('settings.schedules-api.test');
-            Route::get('settings/train-stops-api', [Admin\TrainStopsApiController::class, 'show'])->name('settings.train-stops-api.show');
-            Route::put('settings/train-stops-api', [Admin\TrainStopsApiController::class, 'update'])->name('settings.train-stops-api.update');
-            Route::delete('settings/train-stops-api', [Admin\TrainStopsApiController::class, 'reset'])->name('settings.train-stops-api.reset');
-            Route::post('settings/train-stops-api/test', [Admin\TrainStopsApiController::class, 'test'])->middleware('throttle:admin-sync')->name('settings.train-stops-api.test');
-            Route::post('settings/stations-api/test', [Admin\StationsApiController::class, 'test'])->middleware('throttle:admin-sync')->name('settings.stations-api.test');
+            Route::put('settings/ingest-auto-sync', [Admin\SyncStationsController::class, 'autoSync'])->name('settings.ingest-auto-sync.update');
             Route::get('stations/{station:id}', [Admin\StationController::class, 'show'])->whereNumber('station')->name('stations.show');
             Route::patch('stations/{station:id}', [Admin\StationController::class, 'update'])->whereNumber('station')->name('stations.update');
 
@@ -92,10 +78,7 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
 
             Route::get('sync-logs', [Admin\SyncController::class, 'index'])->name('sync.index');
             Route::get('sync-logs/{syncLog}', [Admin\SyncController::class, 'show'])->name('sync.show');
-            Route::get('sync-logs/{syncLog}/requests', [Admin\SyncController::class, 'requests'])->name('sync.requests');
-            Route::get('kci-watch', [Admin\SyncController::class, 'watch'])->name('kci-watch');
             Route::post('sync/import', [Admin\SyncController::class, 'import'])->middleware('throttle:admin-sync')->name('sync.import');
-            Route::post('sync/kci', [Admin\SyncController::class, 'kci'])->middleware('throttle:admin-sync')->name('sync.kci');
         });
     });
 });

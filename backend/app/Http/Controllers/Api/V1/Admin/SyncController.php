@@ -5,27 +5,22 @@ namespace App\Http\Controllers\Api\V1\Admin;
 use App\Enums\SyncStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\SyncLogResource;
-use App\Models\KciTimetableCheck;
 use App\Models\Station;
 use App\Models\SyncLog;
-use App\Models\SyncLogRequest;
-use App\Services\AutoSyncService;
-use App\Services\Kci\Clients\KciUrlClient;
 use App\Services\Kci\Exceptions\KciApiException;
-use App\Services\KciTimetableWatchService;
 use App\Services\ManualImportService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Response;
-use Illuminate\Support\Carbon;
 use Illuminate\Validation\Rule;
 
 class SyncController extends Controller
 {
     /**
-     * GET /admin/sync-logs?type= — the meta describes "Sync dari KCI" (manual or
-     * automatic) of that type; without a type, of the schedules.
+     * GET /admin/sync-logs?type= — the meta describes the syncs that bring data in
+     * (krl-sync on Vercel through the ingest API, or a manual import) of that type;
+     * without a type, of the schedules. This server never fetches from KCI itself.
      */
     public function index(Request $request): AnonymousResourceCollection
     {
@@ -41,7 +36,7 @@ class SyncController extends Controller
             ->latest('id')
             ->paginate($request->integer('per_page', 20));
 
-        $syncs = fn () => SyncLog::query()->where('type', $type ?? SyncLog::TYPE_KCI_SCHEDULES)->whereIn('trigger', ['manual', 'schedule']);
+        $syncs = fn () => SyncLog::query()->where('type', $type ?? SyncLog::TYPE_KCI_SCHEDULES)->whereIn('trigger', ['ingest', 'import']);
         $last = $syncs()->with('triggeredBy')->latest('id')->first();
         $lastSuccess = $syncs()->whereIn('status', [SyncStatus::Success, SyncStatus::Partial])->latest('finished_at')->first();
 
@@ -58,98 +53,6 @@ class SyncController extends Controller
     public function show(SyncLog $syncLog): SyncLogResource
     {
         return new SyncLogResource($syncLog->load('triggeredBy'));
-    }
-
-    /**
-     * GET /admin/sync-logs/{id}/requests?after= — the KCI requests of one sync run
-     * (URL + outcome, no body), oldest first. Poll with after = last seen id.
-     */
-    public function requests(Request $request, SyncLog $syncLog): JsonResponse
-    {
-        $request->validate(['after' => ['sometimes', 'integer', 'min:0']]);
-
-        $rows = SyncLogRequest::where('sync_log_id', $syncLog->id)
-            ->where('id', '>', $request->integer('after'))
-            ->orderBy('id')
-            ->limit(500)
-            ->get(['id', 'url', 'status_code', 'ok', 'message', 'duration_ms', 'created_at']);
-
-        $counts = SyncLogRequest::where('sync_log_id', $syncLog->id)
-            ->selectRaw('count(*) as total, count(*) filter (where ok) as ok_count')
-            ->first();
-
-        return response()->json([
-            'data' => $rows->map(fn (SyncLogRequest $row) => [
-                ...$row->only(['id', 'url', 'status_code', 'ok', 'message', 'duration_ms']),
-                'created_at' => $row->created_at->toIso8601String(),
-            ]),
-            'meta' => [
-                'total' => (int) $counts->total,
-                'ok' => (int) $counts->ok_count,
-                'failed' => (int) $counts->total - (int) $counts->ok_count,
-            ],
-        ]);
-    }
-
-    /**
-     * GET /admin/kci-watch — when did KCI's timetable change (publish times)?
-     */
-    public function watch(KciTimetableWatchService $watch): JsonResponse
-    {
-        $report = $watch->report();
-        $check = fn (?KciTimetableCheck $c) => $c ? [
-            'checked_at' => $c->checked_at->toIso8601String(),
-            'ok' => $c->ok,
-            'trains' => $c->trains,
-            'first_departure' => $c->first_departure,
-            'last_departure' => $c->last_departure,
-            'changed' => $c->changed,
-            'summary' => $c->diff['summary'] ?? null,
-            'error' => $c->error,
-        ] : null;
-
-        return response()->json(['data' => [
-            'station' => $report['station'],
-            'interval_minutes' => $report['interval_minutes'],
-            'checks' => $report['checks'],
-            'first_check_at' => $report['first_check_at'] ? Carbon::parse($report['first_check_at'])->toIso8601String() : null,
-            'last_check' => $check($report['last_check']),
-            'changes' => $report['changes']->map($check)->values(),
-        ]]);
-    }
-
-    /**
-     * POST /admin/sync/kci { "type": "stations" | "schedules" | "trains" } — "Sync dari KCI":
-     * fetch the station list, the configured stations' timetable, or the stops of their
-     * trains from KCI (through the kci-fetch sidecar) into this database. The queue worker
-     * runs it in the background; progress is on the sync log. Default type: schedules.
-     */
-    public function kci(Request $request, AutoSyncService $sync): JsonResponse
-    {
-        $validated = $request->validate([
-            'type' => ['sometimes', Rule::in(array_keys(SyncLog::KCI_TYPES))],
-        ]);
-
-        // KCI blocked this server recently: retrying now only prolongs the block.
-        if ($until = KciUrlClient::blockedUntil()) {
-            $message = 'KCI sedang memblokir server ini. Sinkronisasi dijeda sampai '.$until->timezone(config('app.timezone'))->format('H:i').'.';
-
-            return response()->json([
-                'message' => $message,
-                'errors' => ['kci' => [$message]],
-                'blocked_until' => $until->toIso8601String(),
-            ], Response::HTTP_TOO_MANY_REQUESTS);
-        }
-
-        $log = $sync->start($validated['type'] ?? 'schedules', 'manual', $request->user()->id);
-
-        if (! $log) {
-            return response()->json(['message' => 'A synchronization is already in progress.'], Response::HTTP_CONFLICT);
-        }
-
-        return (new SyncLogResource($log->refresh()->load('triggeredBy')))
-            ->response()
-            ->setStatusCode(Response::HTTP_ACCEPTED);
     }
 
     /**

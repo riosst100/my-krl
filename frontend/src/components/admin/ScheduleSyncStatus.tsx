@@ -8,8 +8,8 @@ import { formatDateLong, formatDateTimeLong, formatNumber } from "@/lib/format";
 import { useApi } from "@/lib/hooks/useApi";
 
 /**
- * Admin → Jadwal: when the data was last synced from KCI and for which service
- * date. Syncing itself lives in Admin → Sinkronisasi.
+ * Admin → Jadwal: when the data was last synced (krl-sync on Vercel) and for
+ * which service date. The history lives in Admin → Sinkronisasi → Riwayat.
  */
 export function ScheduleSyncStatus() {
   const { data, loading, error } = useApi("schedule-sync-status", () =>
@@ -24,7 +24,7 @@ export function ScheduleSyncStatus() {
       <section aria-labelledby="schedule-sync-title" className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
           <h2 id="schedule-sync-title" className="font-semibold text-ink">
-            Terakhir sync dari KCI
+            Terakhir sinkronisasi
           </h2>
           {last && <SyncStatusBadge status={last.status} />}
         </div>
@@ -73,10 +73,10 @@ export function ScheduleSyncStatus() {
       </section>
 
       <Link
-        href="/admin/sync/jadwal"
+        href="/admin/sync/riwayat"
         className="shrink-0 text-sm font-semibold text-brand-600 hover:underline"
       >
-        Sync Data →
+        Riwayat →
       </Link>
     </Card>
   );

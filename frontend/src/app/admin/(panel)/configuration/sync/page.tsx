@@ -1,7 +1,6 @@
 "use client";
 
-import { ScheduleSyncPanel } from "@/components/admin/ScheduleSyncPanel";
-import { StationSyncPanel } from "@/components/admin/StationSyncPanel";
+import { KrlSyncAutoPanel } from "@/components/admin/KrlSyncAutoPanel";
 import { SyncStationsPanel } from "@/components/admin/SyncStationsPanel";
 import { PageHeader } from "@/components/ui";
 
@@ -10,13 +9,11 @@ export default function AdminSyncConfigurationPage() {
     <>
       <PageHeader
         title="Sync Configuration"
-        description="Stasiun yang disinkronkan dan alamat API KCI. Berlaku untuk sync manual maupun otomatis. Permintaan ke kci.id lewat layanan kci-fetch (sidik jari TLS browser)."
+        description="Data jadwal dikirim oleh krl-sync di Vercel (server ini tidak bisa mengakses KCI). Atur stasiun yang disinkronkan dan sync otomatisnya di sini."
       />
 
+      <KrlSyncAutoPanel />
       <SyncStationsPanel />
-
-      <StationSyncPanel />
-      <ScheduleSyncPanel />
     </>
   );
 }

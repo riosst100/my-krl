@@ -23,7 +23,7 @@ import { useApi } from "@/lib/hooks/useApi";
 const sameSet = (a: string[], b: string[]) =>
   a.length === b.length && a.every((code) => b.includes(code));
 
-/** Admin → Configuration → Sync Configuration: which stations' timetables (and their trains) are synced. */
+/** Admin → Configuration → Sync Configuration: which stations' timetables krl-sync (Vercel) syncs. */
 export function SyncStationsPanel({ onChanged }: { onChanged?: () => void }) {
   const { toast } = useToast();
   const setting = useApi("sync-stations-setting", () =>
@@ -99,9 +99,9 @@ export function SyncStationsPanel({ onChanged }: { onChanged?: () => void }) {
         )}
       </div>
       <p className="mt-1 text-sm text-muted">
-        Sync Jadwal dan Sync Kereta, manual maupun otomatis, hanya mengambil
-        data stasiun yang dipilih. Makin banyak stasiun, makin lama
-        sinkronisasi dan makin banyak permintaan ke KCI.
+        krl-sync di Vercel, manual maupun otomatis, hanya mengambil jadwal
+        stasiun yang dipilih. Makin banyak stasiun, makin lama sinkronisasi
+        dan makin banyak permintaan ke KCI.
       </p>
 
       {setting.loading && !current ? (

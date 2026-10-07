@@ -11,7 +11,8 @@ use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
 /**
- * Admin setting: which stations the schedule sync fetches timetables for.
+ * Admin settings for krl-sync on Vercel (read through GET /ingest/config):
+ * which stations it syncs, and whether its daily automatic sync runs.
  */
 class SyncStationsController extends Controller
 {
@@ -46,6 +47,19 @@ class SyncStationsController extends Controller
         return $this->respond();
     }
 
+    /**
+     * PUT { "enabled": bool } — switches krl-sync's automatic (cron) sync on or off.
+     * Manual syncs from the krl-sync page keep working.
+     */
+    public function autoSync(Request $request): JsonResponse
+    {
+        $validated = $request->validate(['enabled' => ['required', 'boolean']]);
+
+        Setting::put(Setting::INGEST_AUTO_SYNC, $validated['enabled'] ? 'true' : 'false', $request->user()->id);
+
+        return $this->respond();
+    }
+
     public function reset(): JsonResponse
     {
         Setting::whereKey(Setting::SYNC_STATIONS)->delete();
@@ -67,6 +81,7 @@ class SyncStationsController extends Controller
                 'active_stations' => Station::active()->count(),
                 'updated_at' => $setting?->updated_at?->toIso8601String(),
                 'updated_by' => $setting?->updatedBy?->name,
+                'auto_sync' => filter_var(Setting::value(Setting::INGEST_AUTO_SYNC, 'true'), FILTER_VALIDATE_BOOL),
             ],
         ]);
     }

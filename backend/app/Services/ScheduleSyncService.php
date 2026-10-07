@@ -2,64 +2,32 @@
 
 namespace App\Services;
 
-use App\Enums\SyncStatus;
 use App\Models\Schedule;
 use App\Models\Setting;
 use App\Models\Station;
-use App\Models\SyncLog;
 use App\Models\TrainLine;
-use App\Services\Concerns\FinishesSyncLog;
-use App\Services\Kci\Clients\KciUrlClient;
 use App\Services\Kci\Data\KciSchedule;
-use App\Services\Kci\Exceptions\KciApiException;
-use App\Services\Kci\Exceptions\KciBlockedException;
-use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
-use Throwable;
 
 /**
- * Daily schedule sync: KCI → validate/transform (KciService) → upsert into
- * PostgreSQL. Station master data is synced separately (StationSyncService,
- * monthly); it is only bootstrapped here when the stations table is empty.
- * Train stops are synced separately too (TrainStopSyncService::run).
- * Every run is recorded in sync_logs.
+ * Stores station timetables. The data comes from krl-sync on Vercel (ingest
+ * API) or a pasted KCI response (manual import); this server never fetches
+ * from KCI itself.
  */
 class ScheduleSyncService
 {
-    use FinishesSyncLog;
-
-    private const LOCK = 'kci-schedule-sync';
-
     /** @var array<string, int> line name => id */
     private array $lineIds = [];
 
     /** @var array<string, string>|null normalized name => station name */
     private ?array $stationNames = null;
 
-    public function __construct(
-        private readonly KciService $kci,
-        private readonly StationSyncService $stationSync,
-        private readonly KciUrlClient $urlClient,
-        private readonly ScheduleCarryForwardService $carryForward,
-    ) {}
-
     /**
-     * The Schedules API URL in effect: the admin setting if saved, otherwise
-     * KCI_SCHEDULES_API_URL. Empty string = use the KCI client (http/mock).
-     */
-    public function schedulesApiUrl(): string
-    {
-        return trim((string) Setting::value(Setting::SCHEDULES_API_URL, (string) config('kci.schedules_api_url')));
-    }
-
-    /**
-     * Station codes whose timetable is synced: the admin setting if saved,
-     * otherwise KCI_SYNC_STATIONS (empty = every active station).
+     * Station codes whose timetable krl-sync syncs (GET /ingest/config): the
+     * admin setting if saved, otherwise KCI_SYNC_STATIONS (empty = every active station).
      *
      * @return list<string>
      */
@@ -69,211 +37,6 @@ class ScheduleSyncService
         $codes = $saved !== null ? explode(',', $saved) : config('kci.sync_stations');
 
         return array_values(array_unique(array_filter(array_map(fn ($c) => strtoupper(trim((string) $c)), $codes))));
-    }
-
-    /**
-     * The URL for one station: replaces a {station} placeholder, or the value
-     * of the "stationid" query parameter, with the station code.
-     *
-     * @throws KciApiException when the URL has neither
-     */
-    public static function urlForStation(string $url, string $stationCode): string
-    {
-        if (str_contains($url, '{station}')) {
-            return str_replace('{station}', rawurlencode($stationCode), $url);
-        }
-
-        $replaced = preg_replace('/([?&]stationid=)[^&#]*/i', '${1}'.rawurlencode($stationCode), $url, 1, $count);
-
-        if ($count === 0) {
-            throw KciApiException::invalidResponse('Schedules API URL must contain a "stationid" query parameter or a {station} placeholder');
-        }
-
-        return $replaced;
-    }
-
-    public function createLog(string $trigger, ?int $userId = null, SyncStatus $status = SyncStatus::Queued): SyncLog
-    {
-        $url = $this->schedulesApiUrl();
-
-        return SyncLog::create([
-            'type' => SyncLog::TYPE_KCI_SCHEDULES,
-            'status' => $status,
-            'trigger' => $trigger,
-            'triggered_by' => $userId,
-            'source' => $url !== '' ? 'http' : $this->kci->client()->name(),
-            'meta' => ['url' => $url !== '' ? $url : null],
-        ]);
-    }
-
-    /**
-     * Dry run for the admin "Tes URL" button: fetch + parse one station's
-     * timetable, no database writes.
-     *
-     * @return array{ok: bool, url: string, station: string, count: int, first: ?string, last: ?string, lines: list<string>, sample: list<array<string, mixed>>, error: ?string}
-     */
-    public function preview(string $url, string $stationCode): array
-    {
-        $result = ['ok' => false, 'url' => $url, 'station' => $stationCode, 'count' => 0, 'first' => null, 'last' => null, 'lines' => [], 'sample' => [], 'error' => null];
-
-        try {
-            $result['url'] = self::urlForStation($url, $stationCode);
-            $schedules = $this->kci->parseSchedules(
-                $this->urlClient->fetch($result['url'], config('kci.schedules_api_token')),
-                "schedules of {$stationCode}",
-            )->sortBy('departureTime')->values();
-        } catch (KciApiException $e) {
-            return [...$result, 'error' => $e->getMessage()];
-        }
-
-        return [
-            ...$result,
-            'ok' => $schedules->isNotEmpty(),
-            'count' => $schedules->count(),
-            'first' => $schedules->first() ? substr($schedules->first()->departureTime, 0, 5) : null,
-            'last' => $schedules->last() ? substr($schedules->last()->departureTime, 0, 5) : null,
-            'lines' => $schedules->pluck('lineName')->unique()->values()->all(),
-            'sample' => $schedules->take(5)->map(fn (KciSchedule $s) => [
-                'train_number' => $s->trainNumber,
-                'line' => $s->lineName,
-                'route_name' => $s->routeName,
-                'destination' => $this->destinationName($s->destination),
-                'departure_time' => substr($s->departureTime, 0, 5),
-                'destination_arrival_time' => $s->destinationArrivalTime ? substr($s->destinationArrivalTime, 0, 5) : null,
-            ])->all(),
-            'error' => $schedules->isEmpty() ? 'The timetable is empty.' : null,
-        ];
-    }
-
-    /**
-     * @param  list<string>|null  $stationCodes  Only sync these station codes; null = KCI_SYNC_STATIONS (empty = all).
-     * @param  (callable(string $phase, int $done, int $total): void)|null  $progress  phase is "schedules"
-     */
-    public function run(SyncLog $log, ?CarbonInterface $from = null, ?int $days = null, ?array $stationCodes = null, ?callable $progress = null): SyncLog
-    {
-        $lock = Cache::lock(self::LOCK, 3600);
-
-        if (! $lock->get()) {
-            return $this->finish($log, SyncStatus::Failed, 'Another synchronization is already running.');
-        }
-
-        $url = (string) ($log->meta['url'] ?? '');
-        $from = CarbonImmutable::parse(($from ?? now())->toDateString());
-        // The Schedules API URL returns the current, undated timetable: store it
-        // for one service day only instead of copying it onto future dates.
-        $days = $url !== '' ? 1 : max(1, $days ?? config('kci.sync_days'));
-        $dates = collect(range(0, $days - 1))->map(fn (int $i) => $from->addDays($i));
-        $only = array_values(array_filter(array_map(
-            fn ($code) => strtoupper(trim((string) $code)),
-            $stationCodes ?? self::syncStationCodes(),
-        )));
-
-        $startedAt = now();
-        $log->update([
-            'status' => SyncStatus::Running,
-            'started_at' => $startedAt,
-            'meta' => [...($log->meta ?? []), 'from' => $from->toDateString(), 'days' => $days, 'stations' => $only ?: 'all'],
-        ]);
-
-        try {
-            if (! Station::query()->exists()) {
-                $this->stationSync->import($this->kci->getStations());
-            }
-
-            // Nothing is truncated: stations this run does not (or cannot) sync keep
-            // their last known timetable; persist() only replaces what it fetched.
-            $dates->each(fn (CarbonImmutable $date) => $this->carryForward->carryForward($date));
-
-            [$records, $stations, $failures] = $this->syncSchedules($dates, $only, $url, $progress);
-            $this->refreshLineColors();
-
-            $log->fill([
-                'records_processed' => $records,
-                'stations_processed' => $stations,
-                'meta' => [
-                    ...$log->meta,
-                    'failed_stations' => array_slice($failures, 0, 50, true),
-                ],
-            ]);
-
-            if ($failures === []) {
-                return $this->finish($log, SyncStatus::Success);
-            }
-
-            $status = $stations > 0 ? SyncStatus::Partial : SyncStatus::Failed;
-            $message = count($failures).' station(s) failed. First error: '.reset($failures);
-
-            return $this->finish($log, $status, $message);
-        } catch (Throwable $e) {
-            Log::error('KCI schedule sync failed', ['log_id' => $log->id, 'exception' => $e]);
-
-            return $this->finish($log, SyncStatus::Failed, $e instanceof KciApiException
-                ? $e->getMessage()
-                : 'Unexpected error: '.class_basename($e).': '.$e->getMessage());
-        } finally {
-            $lock->release();
-        }
-    }
-
-    /**
-     * @param  Collection<int, CarbonImmutable>  $dates
-     * @param  list<string>  $only  station codes to sync; empty = every active station
-     * @param  string  $url  Schedules API URL; empty = use the KCI client
-     * @return array{int, int, array<string, string>}
-     */
-    private function syncSchedules(Collection $dates, array $only = [], string $url = '', ?callable $progress = null): array
-    {
-        $client = $this->kci->client();
-        $delay = ($url !== '' || $client->name() === 'http') ? config('kci.request_delay_ms') * 1000 : 0;
-        $dateSpecific = $url === '' && $client->isDateSpecific();
-        $records = 0;
-        $succeeded = 0;
-        $failures = [];
-
-        $stations = Station::active()
-            ->when($only !== [], fn ($q) => $q->whereIn('code', $only))
-            ->orderBy('code')
-            ->get();
-
-        $done = 0;
-
-        foreach ($stations as $station) {
-            $progress && $progress('schedules', $done++, $stations->count());
-
-            try {
-                $shared = null;
-
-                foreach ($dates as $date) {
-                    if ($dateSpecific || $shared === null) {
-                        $schedules = $url !== ''
-                            ? $this->kci->parseSchedules(
-                                $this->urlClient->fetch(self::urlForStation($url, $station->code), config('kci.schedules_api_token')),
-                                "schedules of {$station->code}",
-                            )
-                            : $this->kci->getStationSchedules($station->code, $date);
-                        $shared = $schedules;
-                        $delay && usleep($delay);
-                    } else {
-                        $schedules = $shared;
-                    }
-
-                    $records += $this->persist($station, $date, $schedules);
-                }
-
-                $this->dropOlderDays($station, $dates->first());
-                $succeeded++;
-            } catch (KciBlockedException $e) {
-                // Every remaining station would be refused too.
-                throw $e;
-            } catch (KciApiException $e) {
-                $failures[$station->code] = $e->getMessage();
-                Log::warning('KCI schedule sync failed for station', ['station' => $station->code, 'error' => $e->getMessage()]);
-            }
-        }
-
-        $progress && $progress('schedules', $stations->count(), $stations->count());
-
-        return [$records, $succeeded, $failures];
     }
 
     /**

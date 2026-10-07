@@ -31,6 +31,6 @@ export const TRIGGER_LABELS: Record<string, string> = {
   manual: "Manual",
   console: "Konsol",
   push: "Sync ke Prod",
-  ingest: "Dari lokal",
+  ingest: "krl-sync (Vercel)",
   import: "Import JSON",
 };

@@ -8,7 +8,9 @@ use App\Models\Setting;
 use App\Models\Station;
 use App\Models\SyncLog;
 use App\Models\TrainStop;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Artisan;
 use Tests\TestCase;
 
 /**
@@ -180,5 +182,30 @@ class IngestTest extends TestCase
         $this->postJson('/api/v1/ingest/finish', ['run_id' => $runId, 'date' => '2026-10-04', 'status' => 'success'], $this->ingestHeaders())
             ->assertOk()->assertJsonPath('data.status', 'failed');
         $this->assertSame('Dihentikan', SyncLog::find($runId)->error_message);
+    }
+
+    public function test_admin_switches_krl_syncs_automatic_sync(): void
+    {
+        config(['kci.ingest_token' => self::TOKEN]);
+        $admin = User::factory()->admin()->create();
+
+        $this->actingAs($admin, 'admin')->fromFrontend()
+            ->putJson('/api/v1/admin/settings/ingest-auto-sync', ['enabled' => false])
+            ->assertOk()->assertJsonPath('data.auto_sync', false);
+        $this->getJson('/api/v1/ingest/config', $this->ingestHeaders())->assertOk()->assertJsonPath('data.auto_sync', false);
+
+        $this->putJson('/api/v1/admin/settings/ingest-auto-sync', ['enabled' => true])->assertOk()->assertJsonPath('data.auto_sync', true);
+        $this->putJson('/api/v1/admin/settings/ingest-auto-sync', [])->assertUnprocessable();
+    }
+
+    public function test_this_server_no_longer_syncs_from_kci_itself(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin, 'admin')->fromFrontend();
+
+        $this->postJson('/api/v1/admin/sync/kci')->assertNotFound();
+        $this->getJson('/api/v1/admin/settings/auto-sync')->assertNotFound();
+        $this->getJson('/api/v1/admin/settings/schedules-api')->assertNotFound();
+        $this->assertArrayNotHasKey('kci:auto-sync', Artisan::all());
     }
 }

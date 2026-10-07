@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
-/** The section's old single "Sync Data" page: the syncs now have their own pages. */
+/** Syncing runs on krl-sync (Vercel); this section shows its history. */
 export default function AdminSyncPage() {
-  redirect("/admin/sync/jadwal");
+  redirect("/admin/sync/riwayat");
 }

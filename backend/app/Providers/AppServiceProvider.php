@@ -3,7 +3,6 @@
 namespace App\Providers;
 
 use App\Services\Kci\Clients\HttpKciClient;
-use App\Services\Kci\KciRequestLog;
 use App\Services\Kci\Clients\MockKciClient;
 use App\Services\Kci\Contracts\KciClient;
 use Illuminate\Cache\RateLimiting\Limit;
@@ -20,9 +19,6 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        // Shared by the sync run (opens it) and KciUrlClient (writes to it).
-        $this->app->singleton(KciRequestLog::class);
-
         // Swap the KCI data source without touching the rest of the app.
         $this->app->bind(KciClient::class, function () {
             $config = config('kci');
@@ -57,7 +53,7 @@ class AppServiceProvider extends ServiceProvider
             Limit::perMinute(20)->by($request->ip()),
         ]);
 
-        // Sync triggers and URL tests call KCI: limit each endpoint separately per admin.
+        // Manual import (pasted KCI JSON): limit each endpoint separately per admin.
         RateLimiter::for('admin-sync', fn (Request $request) => Limit::perMinute(5)
             ->by(($request->user()?->id ?: $request->ip()).'|'.$request->path()));
     }
