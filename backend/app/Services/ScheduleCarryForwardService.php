@@ -70,21 +70,23 @@ class ScheduleCarryForwardService
                 ->whereIn('train_number', $chunk->values()->all())
                 ->groupBy('train_number');
 
+            // Marked as carried: the train's own stops for $day are still to be fetched.
             $copied += $this->copy('train_stops', $columns, TrainStop::query()
                 ->joinSub($latest, 'latest', fn ($join) => $join
                     ->on('latest.train_number', '=', 'train_stops.train_number')
-                    ->on('latest.latest_date', '=', 'train_stops.service_date')), $day);
+                    ->on('latest.latest_date', '=', 'train_stops.service_date')), $day, ['carried_forward' => true]);
         }
 
         return $copied;
     }
 
     /**
-     * INSERT … SELECT of $columns from $source, re-dated to $day.
+     * INSERT … SELECT of $columns from $source, re-dated to $day, plus fixed boolean $flags.
      *
      * @param  list<string>  $columns
+     * @param  array<string, bool>  $flags
      */
-    private function copy(string $table, array $columns, Builder $source, string $day): int
+    private function copy(string $table, array $columns, Builder $source, string $day, array $flags = []): int
     {
         $now = now()->toDateTimeString();
         $select = $source->toBase()
@@ -93,6 +95,10 @@ class ScheduleCarryForwardService
             ->selectRaw('CAST(? AS TIMESTAMP)', [$now])
             ->selectRaw('CAST(? AS TIMESTAMP)', [$now]);
 
-        return DB::table($table)->insertUsing([...$columns, 'service_date', 'created_at', 'updated_at'], $select);
+        foreach ($flags as $value) {
+            $select->selectRaw($value ? 'TRUE' : 'FALSE');
+        }
+
+        return DB::table($table)->insertUsing([...$columns, 'service_date', 'created_at', 'updated_at', ...array_keys($flags)], $select);
     }
 }

@@ -211,7 +211,8 @@ class TrainStopSyncService
         }
 
         $serviceDate = $date->toDateString();
-        $known = $refresh ? collect() : TrainStop::whereDate('service_date', $serviceDate)->distinct()->pluck('train_number')->flip();
+        // Carried-forward stops are only a stand-in: those trains are fetched again.
+        $known = $refresh ? collect() : TrainStop::whereDate('service_date', $serviceDate)->where('carried_forward', false)->distinct()->pluck('train_number')->flip();
         $stationIds = Station::pluck('id', 'code');
         $token = config('kci.train_stops_api_token');
         $concurrency = max(1, (int) config('kci.train_stops_concurrency'));

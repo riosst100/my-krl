@@ -117,6 +117,11 @@ return [
     // A scheduler that was down at the exact minute still starts a run this many minutes late.
     'auto_sync_grace_minutes' => (int) env('KCI_AUTO_SYNC_GRACE_MINUTES', 10),
 
+    // krl-sync on Vercel: fetches one train's stops from KCI on demand (when a train's
+    // detail is opened and its stops for today are not stored yet). Authenticated with
+    // SYNC_INGEST_TOKEN. Empty = no on-demand fetch.
+    'stops_proxy_url' => env('KCI_STOPS_PROXY_URL', 'https://krl-sync.vercel.app/api/sync'),
+
     // Shared secret for the ingest API (krl-sync on Vercel pushes the timetable here).
     // Empty = the receiving API is switched off.
     'ingest_token' => env('SYNC_INGEST_TOKEN'),

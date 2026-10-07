@@ -8,6 +8,7 @@ use App\Http\Resources\ScheduleResource;
 use App\Models\Station;
 use App\Models\TrainStop;
 use App\Services\ScheduleSearchService;
+use App\Services\TrainStopLookupService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -119,10 +120,15 @@ class ScheduleController extends Controller
 
     /**
      * GET /schedules/trains/{trainNumber}/stops — every stop of one train (latest timetable).
+     * Today's stops are fetched on first view (through krl-sync) and then served from the database.
      */
-    public function trainStops(ScheduleFilterRequest $request, string $trainNumber): JsonResponse
+    public function trainStops(ScheduleFilterRequest $request, TrainStopLookupService $lookup, string $trainNumber): JsonResponse
     {
         $date = $request->serviceDate();
+
+        if ($date === now()->toDateString()) {
+            $lookup->ensureToday($trainNumber);
+        }
         $stops = TrainStop::query()
             ->with('station:id,code,name,slug')
             ->whereDate('service_date', $date)
@@ -142,7 +148,8 @@ class ScheduleController extends Controller
                 'time' => substr($stop->time, 0, 5),
                 'is_transit' => $stop->is_transit,
             ])->values(),
-            'meta' => ['train_number' => $trainNumber, 'date' => $date],
+            // true = an earlier day's stops (today's could not be fetched yet)
+            'meta' => ['train_number' => $trainNumber, 'date' => $date, 'carried_forward' => $stops->first()->carried_forward],
         ]);
     }
 

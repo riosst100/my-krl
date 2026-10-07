@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-#[Fillable(['service_date', 'train_number', 'sequence', 'station_code', 'station_id', 'time', 'is_transit'])]
+#[Fillable(['service_date', 'train_number', 'sequence', 'station_code', 'station_id', 'time', 'is_transit', 'carried_forward'])]
 class TrainStop extends Model
 {
     protected function casts(): array
@@ -14,6 +14,7 @@ class TrainStop extends Model
         return [
             'service_date' => 'date',
             'is_transit' => 'boolean',
+            'carried_forward' => 'boolean',
         ];
     }
 
