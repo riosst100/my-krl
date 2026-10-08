@@ -15,36 +15,19 @@ x-backend: &backend
     SANCTUM_STATEFUL_DOMAINS: ${SANCTUM_STATEFUL_DOMAINS:-localhost:${FRONTEND_PORT:-3000},127.0.0.1:${FRONTEND_PORT:-3000}}
     SESSION_DOMAIN: ${SESSION_DOMAIN:-localhost}
     SESSION_SECURE_COOKIE: ${SESSION_SECURE_COOKIE:-false}
+    # Shared PostgreSQL from ~/projects/services (start it first).
     DB_CONNECTION: pgsql
     DB_HOST: postgres
     DB_PORT: 5432
     DB_DATABASE: ${POSTGRES_DB:-krl}
     DB_USERNAME: ${POSTGRES_USER:-krl}
     DB_PASSWORD: ${POSTGRES_PASSWORD:-secret}
-  depends_on:
-    postgres:
-      condition: service_healthy
+  networks:
+    - default
+    - services
   restart: unless-stopped
 
 services:
-  postgres:
-    image: postgres:17-alpine
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-krl}
-      POSTGRES_USER: ${POSTGRES_USER:-krl}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-secret}
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-      - ./docker/postgres/init-test-db.sql:/docker-entrypoint-initdb.d/10-test-db.sql:ro
-    ports:
-      - "127.0.0.1:${DB_FORWARD_PORT:-5432}:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-krl} -d ${POSTGRES_DB:-krl}"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
-    restart: unless-stopped
-
   backend:
     <<: *backend
     command: ["serve"]
@@ -90,5 +73,6 @@ services:
       - backend
     restart: unless-stopped
 
-volumes:
-  pgdata:
+networks:
+  services:
+    external: true
