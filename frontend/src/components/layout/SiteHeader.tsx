@@ -9,6 +9,7 @@ import { cx, Skeleton } from "@/components/ui";
 const NAV = [
   { href: "/schedule", label: "Jadwal" },
   { href: "/stations", label: "Stasiun" },
+  { href: "/download", label: "Aplikasi" },
 ];
 
 export function Logo() {

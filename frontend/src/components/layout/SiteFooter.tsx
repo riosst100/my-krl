@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 export function SiteFooter() {
   return (
     <footer className="border-t border-line">
@@ -15,6 +17,22 @@ export function SiteFooter() {
             <p className="mt-0.5 text-[13px] leading-relaxed text-amber-900">Jadwal dapat berubah sewaktu-waktu. Selalu cek pengumuman di stasiun.</p>
           </div>
         </div>
+
+        <Link
+          href="/download"
+          className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-line/80 bg-surface px-4 py-3 shadow-card transition-colors hover:border-brand-600/40"
+        >
+          <span className="flex items-center gap-3">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-brand-500 to-brand-700 text-[10px] font-extrabold text-white">
+              KRL
+            </span>
+            <span>
+              <span className="block text-sm font-bold text-ink">Aplikasi My KRL untuk Android</span>
+              <span className="block text-xs text-muted">Rute favorit &amp; posisi kereta di HP Anda</span>
+            </span>
+          </span>
+          <span className="shrink-0 text-sm font-semibold text-brand-600">Unduh →</span>
+        </Link>
 
         <p className="mt-5 text-center text-[11px] text-muted sm:text-xs">© {new Date().getFullYear()} My KRL. All Rights Reserved.</p>
       </div>
